@@ -6,6 +6,7 @@ const terminal = @import("main.zig");
 const point = terminal.point;
 const Page = terminal.Page;
 const PageList = terminal.PageList;
+const Pin = PageList.Pin;
 const Selection = terminal.Selection;
 const Screen = terminal.Screen;
 
@@ -95,6 +96,85 @@ const SlidingWindow = struct {
         var meta_it = self.meta.iterator(.forward);
         while (meta_it.next()) |meta| meta.deinit();
         self.meta.deinit(alloc);
+    }
+
+    /// Search the window for the next occurrence of the needle. As
+    /// the window moves, the window will prune itself while maintaining
+    /// the invariant that the window is always big enough to contain
+    /// the needle.
+    pub fn next(self: *SlidingWindow, needle: []const u8) ?Selection {
+        const slices = self.data.getPtrSlice(0, self.data.len());
+
+        // Search the first slice for the needle.
+        if (std.mem.indexOf(u8, slices[0], needle)) |idx| {
+            return self.selection(idx, needle.len);
+        }
+
+        @panic("TODO");
+    }
+
+    /// Return a selection for the given start and length into the data
+    /// buffer and also prune the data/meta buffers if possible up to
+    /// this start index.
+    fn selection(
+        self: *SlidingWindow,
+        start: usize,
+        len: usize,
+    ) Selection {
+        assert(start < self.data.len());
+        assert(start + len < self.data.len());
+
+        var meta_it = self.meta.iterator(.forward);
+        const tl: Pin = pin(&meta_it, start);
+
+        // We have to seek back so that we reinspect our current
+        // iterator value again in case the start and end are in the
+        // same segment.
+        meta_it.seekBy(-1);
+        const br: Pin = pin(&meta_it, start + len - 1);
+
+        // TODO: prune based on meta_it.idx
+
+        return Selection.init(tl, br, false);
+    }
+
+    /// Convert a data index into a pin.
+    ///
+    /// Tip: you can get the offset into the meta buffer we searched
+    /// by inspecting the iterator index after this function returns.
+    /// I note this because this is useful if you want to prune the
+    /// meta buffer after you find a match.
+    ///
+    /// Precondition: the index must be within the data buffer.
+    fn pin(
+        it: *MetaBuf.Iterator,
+        idx: usize,
+    ) Pin {
+        var offset: usize = 0;
+        while (it.next()) |meta| {
+            // meta_i is the index we expect to find the match in the
+            // cell map within this meta if it contains it.
+            const meta_i = idx - offset;
+            if (meta_i >= meta.cell_map.items.len) {
+                // This meta doesn't contain the match. This means we
+                // can also prune this set of data because we only look
+                // forward.
+                offset += meta.cell_map.items.len;
+                continue;
+            }
+
+            // We found the meta that contains the start of the match.
+            const map = meta.cell_map.items[meta_i];
+            return .{
+                .node = meta.node,
+                .y = map.y,
+                .x = map.x,
+            };
+        }
+
+        // Unreachable because it is a precondition that the index is
+        // within the data buffer.
+        unreachable;
     }
 
     /// Add a new node to the sliding window.
@@ -212,6 +292,62 @@ test "SlidingWindow single append" {
     try testing.expect(s.pages.pages.first == s.pages.pages.last);
     const node: *PageList.List.Node = s.pages.pages.first.?;
     try w.append(alloc, node, needle.len);
+
+    // We should be able to find two matches.
+    {
+        const sel = w.next(needle).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 7,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 10,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+    {
+        const sel = w.next(needle).?;
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 19,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.start()).?);
+        try testing.expectEqual(point.Point{ .active = .{
+            .x = 22,
+            .y = 0,
+        } }, s.pages.pointFromPin(.active, sel.end()).?);
+    }
+}
+
+test "SlidingWindow two pages" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var w = try SlidingWindow.initEmpty(alloc);
+    defer w.deinit(alloc);
+
+    var s = try Screen.init(alloc, 80, 24, 1000);
+    defer s.deinit();
+
+    // Fill up the first page. The final bytes in the first page
+    // are "boo!"
+    const first_page_rows = s.pages.pages.first.?.data.capacity.rows;
+    for (0..first_page_rows - 1) |_| try s.testWriteString("\n");
+    for (0..s.pages.cols - 4) |_| try s.testWriteString("x");
+    try s.testWriteString("boo!");
+    try testing.expect(s.pages.pages.first == s.pages.pages.last);
+    try s.testWriteString("\n");
+    try testing.expect(s.pages.pages.first != s.pages.pages.last);
+    try s.testWriteString("hello. boo!");
+
+    // Imaginary needle for search
+    const needle = "boo!";
+
+    // Add both pages
+    const node: *PageList.List.Node = s.pages.pages.first.?;
+    try w.append(alloc, node, needle.len);
+    try w.append(alloc, node.next.?, needle.len);
+
+    // Ensure our data is correct
 }
 
 pub const PageSearch = struct {

@@ -80,7 +80,7 @@ elem.text = build
 elem = ET.SubElement(item, "sparkle:shortVersionString")
 elem.text = f"{commit} ({now.strftime('%Y-%m-%d')})"
 elem = ET.SubElement(item, "sparkle:minimumSystemVersion")
-elem.text = "12.0.0"
+elem.text = "13.0.0"
 elem = ET.SubElement(item, "description")
 elem.text = f"""
 <p>

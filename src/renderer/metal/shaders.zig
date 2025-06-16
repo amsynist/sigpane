@@ -6,6 +6,7 @@ const objc = @import("objc");
 const math = @import("../../math.zig");
 
 const mtl = @import("api.zig");
+const Pipeline = @import("Pipeline.zig");
 
 const log = std.log.scoped(.metal);
 
@@ -14,20 +15,24 @@ pub const Shaders = struct {
     library: objc.Object,
 
     /// Renders cell foreground elements (text, decorations).
-    cell_text_pipeline: objc.Object,
+    cell_text_pipeline: Pipeline,
 
     /// The cell background shader is the shader used to render the
     /// background of terminal cells.
-    cell_bg_pipeline: objc.Object,
+    cell_bg_pipeline: Pipeline,
 
     /// The image shader is the shader used to render images for things
     /// like the Kitty image protocol.
-    image_pipeline: objc.Object,
+    image_pipeline: Pipeline,
 
     /// Custom shaders to run against the final drawable texture. This
     /// can be used to apply a lot of effects. Each shader is run in sequence
     /// against the output of the previous shader.
-    post_pipelines: []const objc.Object,
+    post_pipelines: []const Pipeline,
+
+    /// Set to true when deinited, if you try to deinit a defunct set
+    /// of shaders it will just be ignored, to prevent double-free.
+    defunct: bool = false,
 
     /// Initialize our shader set.
     ///
@@ -44,15 +49,15 @@ pub const Shaders = struct {
         errdefer library.msgSend(void, objc.sel("release"), .{});
 
         const cell_text_pipeline = try initCellTextPipeline(device, library, pixel_format);
-        errdefer cell_text_pipeline.msgSend(void, objc.sel("release"), .{});
+        errdefer cell_text_pipeline.deinit();
 
         const cell_bg_pipeline = try initCellBgPipeline(device, library, pixel_format);
-        errdefer cell_bg_pipeline.msgSend(void, objc.sel("release"), .{});
+        errdefer cell_bg_pipeline.deinit();
 
         const image_pipeline = try initImagePipeline(device, library, pixel_format);
-        errdefer image_pipeline.msgSend(void, objc.sel("release"), .{});
+        errdefer image_pipeline.deinit();
 
-        const post_pipelines: []const objc.Object = initPostPipelines(
+        const post_pipelines: []const Pipeline = initPostPipelines(
             alloc,
             device,
             library,
@@ -66,7 +71,7 @@ pub const Shaders = struct {
             break :err &.{};
         };
         errdefer if (post_pipelines.len > 0) {
-            for (post_pipelines) |pipeline| pipeline.msgSend(void, objc.sel("release"), .{});
+            for (post_pipelines) |pipeline| pipeline.deinit();
             alloc.free(post_pipelines);
         };
 
@@ -80,16 +85,19 @@ pub const Shaders = struct {
     }
 
     pub fn deinit(self: *Shaders, alloc: Allocator) void {
+        if (self.defunct) return;
+        self.defunct = true;
+
         // Release our primary shaders
-        self.cell_text_pipeline.msgSend(void, objc.sel("release"), .{});
-        self.cell_bg_pipeline.msgSend(void, objc.sel("release"), .{});
-        self.image_pipeline.msgSend(void, objc.sel("release"), .{});
+        self.cell_text_pipeline.deinit();
+        self.cell_bg_pipeline.deinit();
+        self.image_pipeline.deinit();
         self.library.msgSend(void, objc.sel("release"), .{});
 
         // Release our postprocess shaders
         if (self.post_pipelines.len > 0) {
             for (self.post_pipelines) |pipeline| {
-                pipeline.msgSend(void, objc.sel("release"), .{});
+                pipeline.deinit();
             }
             alloc.free(self.post_pipelines);
         }
@@ -140,25 +148,30 @@ pub const Uniforms = extern struct {
     /// The background color for the whole surface.
     bg_color: [4]u8 align(4),
 
-    /// Whether the cursor is 2 cells wide.
-    cursor_wide: bool align(1),
+    /// Various booleans.
+    ///
+    /// TODO: Maybe put these in a packed struct, like for OpenGL.
+    bools: extern struct {
+        /// Whether the cursor is 2 cells wide.
+        cursor_wide: bool align(1),
 
-    /// Indicates that colors provided to the shader are already in
-    /// the P3 color space, so they don't need to be converted from
-    /// sRGB.
-    use_display_p3: bool align(1),
+        /// Indicates that colors provided to the shader are already in
+        /// the P3 color space, so they don't need to be converted from
+        /// sRGB.
+        use_display_p3: bool align(1),
 
-    /// Indicates that the color attachments for the shaders have
-    /// an `*_srgb` pixel format, which means the shaders need to
-    /// output linear RGB colors rather than gamma encoded colors,
-    /// since blending will be performed in linear space and then
-    /// Metal itself will re-encode the colors for storage.
-    use_linear_blending: bool align(1),
+        /// Indicates that the color attachments for the shaders have
+        /// an `*_srgb` pixel format, which means the shaders need to
+        /// output linear RGB colors rather than gamma encoded colors,
+        /// since blending will be performed in linear space and then
+        /// Metal itself will re-encode the colors for storage.
+        use_linear_blending: bool align(1),
 
-    /// Enables a weight correction step that makes text rendered
-    /// with linear alpha blending have a similar apparent weight
-    /// (thickness) to gamma-incorrect blending.
-    use_linear_correction: bool align(1) = false,
+        /// Enables a weight correction step that makes text rendered
+        /// with linear alpha blending have a similar apparent weight
+        /// (thickness) to gamma-incorrect blending.
+        use_linear_correction: bool align(1) = false,
+    },
 
     const PaddingExtend = packed struct(u8) {
         left: bool = false,
@@ -214,15 +227,16 @@ fn initLibrary(device: objc.Object) !objc.Object {
     return library;
 }
 
-/// Initialize our custom shader pipelines. The shaders argument is a
-/// set of shader source code, not file paths.
+/// Initialize our custom shader pipelines.
+///
+/// The shaders argument is a set of shader source code, not file paths.
 fn initPostPipelines(
     alloc: Allocator,
     device: objc.Object,
     library: objc.Object,
     shaders: []const [:0]const u8,
     pixel_format: mtl.MTLPixelFormat,
-) ![]const objc.Object {
+) ![]const Pipeline {
     // If we have no shaders, do nothing.
     if (shaders.len == 0) return &.{};
 
@@ -230,10 +244,10 @@ fn initPostPipelines(
     var i: usize = 0;
 
     // Initialize our result set. If any error happens, we undo everything.
-    var pipelines = try alloc.alloc(objc.Object, shaders.len);
+    var pipelines = try alloc.alloc(Pipeline, shaders.len);
     errdefer {
         for (pipelines[0..i]) |pipeline| {
-            pipeline.msgSend(void, objc.sel("release"), .{});
+            pipeline.deinit();
         }
         alloc.free(pipelines);
     }
@@ -259,7 +273,7 @@ fn initPostPipeline(
     library: objc.Object,
     data: [:0]const u8,
     pixel_format: mtl.MTLPixelFormat,
-) !objc.Object {
+) !Pipeline {
     // Create our library which has the shader source
     const post_library = library: {
         const source = try macos.foundation.String.createWithBytes(
@@ -282,16 +296,19 @@ fn initPostPipeline(
     };
     defer post_library.msgSend(void, objc.sel("release"), .{});
 
-    return (Pipeline{
+    return try Pipeline.init(null, .{
+        .device = device,
         .vertex_fn = "full_screen_vertex",
         .fragment_fn = "main0",
-        .blending_enabled = false,
-    }).init(
-        device,
-        library,
-        post_library,
-        pixel_format,
-    );
+        .vertex_library = library,
+        .fragment_library = post_library,
+        .attachments = &.{
+            .{
+                .pixel_format = pixel_format,
+                .blending_enabled = false,
+            },
+        },
+    });
 }
 
 /// This is a single parameter for the terminal cell shader.
@@ -324,19 +341,21 @@ fn initCellTextPipeline(
     device: objc.Object,
     library: objc.Object,
     pixel_format: mtl.MTLPixelFormat,
-) !objc.Object {
-    return (Pipeline{
+) !Pipeline {
+    return try Pipeline.init(CellText, .{
+        .device = device,
         .vertex_fn = "cell_text_vertex",
         .fragment_fn = "cell_text_fragment",
-        .Vertex = CellText,
+        .vertex_library = library,
+        .fragment_library = library,
         .step_fn = .per_instance,
-        .blending_enabled = true,
-    }).init(
-        device,
-        library,
-        library,
-        pixel_format,
-    );
+        .attachments = &.{
+            .{
+                .pixel_format = pixel_format,
+                .blending_enabled = true,
+            },
+        },
+    });
 }
 
 /// This is a single parameter for the cell bg shader.
@@ -347,17 +366,20 @@ fn initCellBgPipeline(
     device: objc.Object,
     library: objc.Object,
     pixel_format: mtl.MTLPixelFormat,
-) !objc.Object {
-    return (Pipeline{
+) !Pipeline {
+    return try Pipeline.init(null, .{
+        .device = device,
         .vertex_fn = "cell_bg_vertex",
         .fragment_fn = "cell_bg_fragment",
-        .blending_enabled = false,
-    }).init(
-        device,
-        library,
-        library,
-        pixel_format,
-    );
+        .vertex_library = library,
+        .fragment_library = library,
+        .attachments = &.{
+            .{
+                .pixel_format = pixel_format,
+                .blending_enabled = false,
+            },
+        },
+    });
 }
 
 /// Initialize the image render pipeline for our shader library.
@@ -365,182 +387,21 @@ fn initImagePipeline(
     device: objc.Object,
     library: objc.Object,
     pixel_format: mtl.MTLPixelFormat,
-) !objc.Object {
-    return (Pipeline{
+) !Pipeline {
+    return try Pipeline.init(Image, .{
+        .device = device,
         .vertex_fn = "image_vertex",
         .fragment_fn = "image_fragment",
-        .Vertex = Image,
+        .vertex_library = library,
+        .fragment_library = library,
         .step_fn = .per_instance,
-        .blending_enabled = true,
-    }).init(
-        device,
-        library,
-        library,
-        pixel_format,
-    );
-}
-
-/// A struct with all the necessary info to initialize a pipeline.
-const Pipeline = struct {
-    /// Name of the vertex function
-    vertex_fn: []const u8,
-    /// Name of the fragment function
-    fragment_fn: []const u8,
-
-    /// Vertex attribute struct
-    Vertex: ?type = null,
-    /// Vertex step function
-    step_fn: mtl.MTLVertexStepFunction = .per_vertex,
-
-    /// Whether blending is enabled for the color attachment
-    blending_enabled: bool = true,
-
-    fn init(
-        self: *const Pipeline,
-        device: objc.Object,
-        vertex_library: objc.Object,
-        fragment_library: objc.Object,
-        pixel_format: mtl.MTLPixelFormat,
-    ) !objc.Object {
-        // Create our descriptor
-        const desc = init: {
-            const Class = objc.getClass("MTLRenderPipelineDescriptor").?;
-            const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-            const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-            break :init id_init;
-        };
-        defer desc.msgSend(void, objc.sel("release"), .{});
-
-        // Get our vertex and fragment functions and add them to the descriptor.
-        {
-            const str = try macos.foundation.String.createWithBytes(
-                self.vertex_fn,
-                .utf8,
-                false,
-            );
-            defer str.release();
-
-            const ptr = vertex_library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-            const func_vert = objc.Object.fromId(ptr.?);
-            defer func_vert.msgSend(void, objc.sel("release"), .{});
-
-            desc.setProperty("vertexFunction", func_vert);
-        }
-        {
-            const str = try macos.foundation.String.createWithBytes(
-                self.fragment_fn,
-                .utf8,
-                false,
-            );
-            defer str.release();
-
-            const ptr = fragment_library.msgSend(?*anyopaque, objc.sel("newFunctionWithName:"), .{str});
-            const func_frag = objc.Object.fromId(ptr.?);
-            defer func_frag.msgSend(void, objc.sel("release"), .{});
-
-            desc.setProperty("fragmentFunction", func_frag);
-        }
-
-        // If we have vertex attributes, create and add a vertex descriptor.
-        if (self.Vertex) |V| {
-            const vertex_desc = init: {
-                const Class = objc.getClass("MTLVertexDescriptor").?;
-                const id_alloc = Class.msgSend(objc.Object, objc.sel("alloc"), .{});
-                const id_init = id_alloc.msgSend(objc.Object, objc.sel("init"), .{});
-                break :init id_init;
-            };
-            defer vertex_desc.msgSend(void, objc.sel("release"), .{});
-
-            // Our attributes are the fields of the input
-            const attrs = objc.Object.fromId(vertex_desc.getProperty(?*anyopaque, "attributes"));
-            autoAttribute(V, attrs);
-
-            // The layout describes how and when we fetch the next vertex input.
-            const layouts = objc.Object.fromId(vertex_desc.getProperty(?*anyopaque, "layouts"));
-            {
-                const layout = layouts.msgSend(
-                    objc.Object,
-                    objc.sel("objectAtIndexedSubscript:"),
-                    .{@as(c_ulong, 0)},
-                );
-
-                layout.setProperty("stepFunction", @intFromEnum(self.step_fn));
-                layout.setProperty("stride", @as(c_ulong, @sizeOf(V)));
-            }
-
-            desc.setProperty("vertexDescriptor", vertex_desc);
-        }
-
-        // Set our color attachment
-        const attachments = objc.Object.fromId(desc.getProperty(?*anyopaque, "colorAttachments"));
-        {
-            const attachment = attachments.msgSend(
-                objc.Object,
-                objc.sel("objectAtIndexedSubscript:"),
-                .{@as(c_ulong, 0)},
-            );
-
-            attachment.setProperty("pixelFormat", @intFromEnum(pixel_format));
-
-            attachment.setProperty("blendingEnabled", self.blending_enabled);
-            // We always use premultiplied alpha blending for now.
-            if (self.blending_enabled) {
-                attachment.setProperty("rgbBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-                attachment.setProperty("alphaBlendOperation", @intFromEnum(mtl.MTLBlendOperation.add));
-                attachment.setProperty("sourceRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-                attachment.setProperty("sourceAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one));
-                attachment.setProperty("destinationRGBBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-                attachment.setProperty("destinationAlphaBlendFactor", @intFromEnum(mtl.MTLBlendFactor.one_minus_source_alpha));
-            }
-        }
-
-        // Make our state
-        var err: ?*anyopaque = null;
-        const pipeline_state = device.msgSend(
-            objc.Object,
-            objc.sel("newRenderPipelineStateWithDescriptor:error:"),
-            .{ desc, &err },
-        );
-        try checkError(err);
-        errdefer pipeline_state.msgSend(void, objc.sel("release"), .{});
-
-        return pipeline_state;
-    }
-};
-
-fn autoAttribute(T: type, attrs: objc.Object) void {
-    inline for (@typeInfo(T).@"struct".fields, 0..) |field, i| {
-        const offset = @offsetOf(T, field.name);
-
-        const FT = switch (@typeInfo(field.type)) {
-            .@"enum" => |e| e.tag_type,
-            else => field.type,
-        };
-
-        const format = switch (FT) {
-            [4]u8 => mtl.MTLVertexFormat.uchar4,
-            [2]u16 => mtl.MTLVertexFormat.ushort2,
-            [2]i16 => mtl.MTLVertexFormat.short2,
-            [2]f32 => mtl.MTLVertexFormat.float2,
-            [4]f32 => mtl.MTLVertexFormat.float4,
-            [2]i32 => mtl.MTLVertexFormat.int2,
-            u32 => mtl.MTLVertexFormat.uint,
-            [2]u32 => mtl.MTLVertexFormat.uint2,
-            [4]u32 => mtl.MTLVertexFormat.uint4,
-            u8 => mtl.MTLVertexFormat.uchar,
-            else => comptime unreachable,
-        };
-
-        const attr = attrs.msgSend(
-            objc.Object,
-            objc.sel("objectAtIndexedSubscript:"),
-            .{@as(c_ulong, i)},
-        );
-
-        attr.setProperty("format", @intFromEnum(format));
-        attr.setProperty("offset", @as(c_ulong, offset));
-        attr.setProperty("bufferIndex", @as(c_ulong, 0));
-    }
+        .attachments = &.{
+            .{
+                .pixel_format = pixel_format,
+                .blending_enabled = true,
+            },
+        },
+    });
 }
 
 fn checkError(err_: ?*anyopaque) !void {

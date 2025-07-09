@@ -1,6 +1,3 @@
-//! This benchmark tests the throughput of grapheme break calculation.
-//! This is a common operation in terminal character printing for terminals
-//! that support grapheme clustering.
 const Ascii = @This();
 
 const std = @import("std");
@@ -37,9 +34,13 @@ pub fn run(self: *Ascii, writer: anytype, rand: std.Random) !void {
     var buf: [1024]u8 = undefined;
     while (true) {
         const data = try gen.next(&buf);
-        writer.writeAll(data) catch |err| switch (err) {
-            error.BrokenPipe => return, // stdout closed
-            else => return err,
+        writer.writeAll(data) catch |err| {
+            const Error = error{ NoSpaceLeft, BrokenPipe } || @TypeOf(err);
+            switch (@as(Error, err)) {
+                error.BrokenPipe => return, // stdout closed
+                error.NoSpaceLeft => return, // fixed buffer full
+                else => return err,
+            }
         };
     }
 }
@@ -50,4 +51,13 @@ test Ascii {
 
     const impl: *Ascii = try .create(alloc, .{});
     defer impl.destroy(alloc);
+
+    var prng = std.Random.DefaultPrng.init(1);
+    const rand = prng.random();
+
+    var buf: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+
+    try impl.run(writer, rand);
 }

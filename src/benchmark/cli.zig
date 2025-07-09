@@ -3,12 +3,13 @@ const Allocator = std.mem.Allocator;
 const cli = @import("../cli.zig");
 
 /// The available actions for the CLI. This is the list of available
-/// benchmarks.
+/// benchmarks. View docs for each individual one in the predictably
+/// named files.
 pub const Action = enum {
-    @"terminal-stream",
     @"codepoint-width",
     @"grapheme-break",
     @"terminal-parser",
+    @"terminal-stream",
 
     /// Returns the struct associated with the action. The struct
     /// should have a few decls:

@@ -253,7 +253,8 @@ pub const Window = extern struct {
             self.as(gtk.Widget).addCssClass("devel");
         }
 
-        // Setup some of our objects that are never null
+        // Setup our tab binding group. This ensures certain properties
+        // are only synced from the currently active tab.
         priv.tab_bindings = gobject.BindingGroup.new();
         priv.tab_bindings.bind("title", self.as(gobject.Object), "title", .{});
 
@@ -610,6 +611,51 @@ pub const Window = extern struct {
         priv.tab_bindings.setSource(child.as(gobject.Object));
     }
 
+    fn tabViewPageAttached(
+        _: *adw.TabView,
+        page: *adw.TabPage,
+        _: c_int,
+        self: *Self,
+    ) callconv(.c) void {
+        // Get the attached page which must be a Tab object.
+        const child = page.getChild();
+        const tab = gobject.ext.cast(Tab, child) orelse return;
+
+        // Attach listeners for the surface.
+        // TODO: When we have a split tree we'll want to attach to that.
+        const surface = tab.getActiveSurface();
+        _ = Surface.signals.@"close-request".connect(
+            surface,
+            *Self,
+            surfaceCloseRequest,
+            self,
+            .{},
+        );
+    }
+
+    fn tabViewPageDetached(
+        _: *adw.TabView,
+        page: *adw.TabPage,
+        _: c_int,
+        self: *Self,
+    ) callconv(.c) void {
+        // We need to get the tab to disconnect the signals.
+        const child = page.getChild();
+        const tab = gobject.ext.cast(Tab, child) orelse return;
+
+        // Remove all the signals that have this window as the userdata.
+        const surface = tab.getActiveSurface();
+        _ = gobject.signalHandlersDisconnectMatched(
+            surface.as(gobject.Object),
+            .{ .data = true },
+            0,
+            0,
+            null,
+            null,
+            self,
+        );
+    }
+
     fn surfaceClipboardWrite(
         _: *Surface,
         clipboard_type: apprt.Clipboard,
@@ -809,6 +855,8 @@ pub const Window = extern struct {
             // Template Callbacks
             class.bindTemplateCallback("close_request", &windowCloseRequest);
             class.bindTemplateCallback("selected_page", &tabViewSelectedPage);
+            class.bindTemplateCallback("page_attached", &tabViewPageAttached);
+            class.bindTemplateCallback("page_detached", &tabViewPageDetached);
             class.bindTemplateCallback("surface_clipboard_write", &surfaceClipboardWrite);
             class.bindTemplateCallback("surface_close_request", &surfaceCloseRequest);
             class.bindTemplateCallback("surface_toggle_fullscreen", &surfaceToggleFullscreen);

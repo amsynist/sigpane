@@ -1,5 +1,9 @@
 # Ghostty X
 
+<img width="1632" height="1073" alt="Screenshot 2026-11-06 at 6 01 45 PM" src="https://github.com/user-attachments/assets/3eafeb2e-79bc-49e6-96a4-26ad1c39e919" />
+<img width="1632" height="1073" alt="Screenshot 2026-11-06 at 6 02 34 PM" src="https://github.com/user-attachments/assets/b3966fe6-7074-4851-8011-0dc21eafae2f" />
+
+
 Ghostty X is a personal macOS appearance fork of Ghostty with a new rounded
 tab design, theme-matched colors, and rounded split panes.
 

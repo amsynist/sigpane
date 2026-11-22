@@ -1,103 +1,77 @@
 # Ghostty X
 
-<img width="1632" height="1073" alt="Screenshot 2026-11-06 at 6 01 45 PM" src="https://github.com/user-attachments/assets/3eafeb2e-79bc-49e6-96a4-26ad1c39e919" />
-<img width="1632" height="1073" alt="Screenshot 2026-11-06 at 6 02 34 PM" src="https://github.com/user-attachments/assets/b3966fe6-7074-4851-8011-0dc21eafae2f" />
+Ghostty X is a macOS appearance fork of Ghostty. Its default Signal interface
+adds session cards, a focus trace around split panes, and command blocks you
+can fold and copy inside the terminal.
 
+[![Ghostty X Signal walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-walkthrough.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-walkthrough.mp4)
 
-Ghostty X is a personal macOS appearance fork of Ghostty with a new rounded
-tab design, theme-matched colors, and rounded split panes.
+[Watch the full 52-second walkthrough (MP4)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-walkthrough.mp4) ·
+[Download the interactive Signal preview](docs/previews/signal-interface.html)
 
-## Terminal UI and split panes
+The walkthrough and images are rendered from HTML with fictional terminal
+sessions over the teal cutting-mat wallpaper.
 
-Four tab layouts, each shown with a large terminal pane beside two stacked
-panes. Select a position in **Tab Bar… → Position** to use it in the app.
+## Terminal layouts
 
-| Top tabs | Bottom tabs |
-| --- | --- |
-| ![Top titlebar tabs with nested split panes](docs/images/ghostty-x-top.png) | ![Bottom tabs with nested split panes](docs/images/ghostty-x-bottom.png) |
-| Tabs share the titlebar above the terminal. | Tabs sit below the terminal content. |
+Select **Tab Bar… → Position** to move the session strip. Signal shows numbered
+session cards in the left or right sidebar and compact tabs at the top or bottom.
+Use the sidebar button or **Control-S** at the shell prompt to collapse the
+sidebar to numbered tiles.
 
 | Left sidebar | Right sidebar |
 | --- | --- |
-| ![Left sidebar tabs with nested split panes](docs/images/ghostty-x-left.png) | ![Right sidebar tabs with nested split panes](docs/images/ghostty-x-right.png) |
-| Vertical tabs on the left, with an adjustable sidebar width. | The mirrored layout with vertical tabs on the right. |
+| ![Left session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-left.webp) | ![Right session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-right.webp) |
 
-*These are renders of the local HTML design preview with sample terminal
-content, not screenshots of a running native terminal.*
-
-[Download the interactive HTML preview](docs/previews/tab-bar-redesign.html)
-and open it in a browser to try all four positions, tab styles, colors, and
-sizing controls. The preview is self-contained and works locally.
-
-### What changed
-
-| Area | Ghostty X changes |
+| Top tabs | Bottom tabs |
 | --- | --- |
-| Tabs | Rounded capsules with selection and hover effects, theme accents, and optional per-tab color caps, tints, or dots. |
-| Tab placement | Top titlebar, bottom bar, or left/right sidebar. |
-| Tab controls | A custom visible strip for selecting, renaming, closing, reordering, and detaching native tabs; scrollable overflow keeps the selected tab visible. |
-| Split panes | Eight-point rounded corners, six-point gaps between panes, and six-point padding around a split layout. |
-| Focus | The active split pane gets a blue outline; other panes have a subtle border. |
-| Split resizing | Divider calculations include the full gap, and dragging uses translation to avoid an initial jump. |
-| Gutter appearance | Gaps use the terminal background color and configured opacity. |
-| Appearance settings | A dedicated **Tab Bar…** window with an interactive preview and settings that apply live. |
-| App identity | Builds as `GhosttyX.app` with bundle identifier `com.amsynist.ghosttyx`. |
+| ![Top session tabs above three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-top.webp) | ![Bottom session tabs below three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-bottom.webp) |
 
-Horizontal, vertical, and nested splits continue to use Ghostty's split tree.
-Existing pane drag/drop, zoom, equalize, and keyboard actions are retained.
-The terminal engine, themes, fonts, and key bindings continue to use Ghostty.
+## Command blocks and the Signal prompt
 
-The custom tab strip requires macOS 26 or later and the `tabs` titlebar style.
-macOS 13–15 retains the upstream tab appearance.
+![A selected command block with the keyboard copy hint](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-blocks.webp)
 
-### Tab appearance preview
+- **Fold and reopen output.** Use a block’s chevron or press **Control-F** to
+  fold or reopen eligible blocks at the shell prompt. Optional automatic
+  folding lets you set the line threshold and include or skip the newest output.
+- **Pick and copy.** Use **Shift-Up** or **Shift-Down** to select a finished
+  block, then **Control-C** or **Command-C** to copy its output. Recent commands
+  also offers a preview and copy controls.
+- **See what failed.** A command with a nonzero exit status gets a red
+  **FAILED** marker on its own block. A fold in scrollback can open as a
+  read-only preview.
+- **Follow focus.** The active tab’s color carries through to the pane outline,
+  trace, titlebar and status line. The status line can show the current
+  shortcuts for tab, pane and block actions.
 
-![Tab Bar settings and the actual tab component with sample terminal content](docs/images/ghostty-x-tab-settings.png)
+Choose **Tab Bar… → Terminal → Prompt style** to change the zsh prompt.
 
-*Rendered settings fixture using the actual tab component and sample content.*
+![HUD Brackets in a terminal with a collapsed Signal sidebar](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-hud.webp)
 
-### Still to add or verify
-
-- Add screenshots of a running terminal with horizontal, vertical, and nested
-  splits; the four layouts above are currently HTML illustrations.
-- Complete real-window checks for fullscreen, session restoration, tab overflow,
-  close confirmation, split resizing, and physical mouse/keyboard input.
-- Make the documented `ReleaseLocal` test invocation work with Swift test
-  imports: the latest attempt stopped before tests ran because the app module
-  was built without `-enable-testing`.
-- Pane corner radius, gutter width, and focus-outline appearance are currently
-  fixed in code. User-facing controls for these would be a future addition;
-  **Tab Bar…** currently customizes tabs only.
+[Breadcrumb Rail](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-rail.webp) ·
+[Command Capsule](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-capsule.webp) ·
+[Tabbed Dock](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-dock.webp) ·
+[HUD Brackets](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-hud.webp) ·
+[Command Card](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-card.webp)
 
 ## Configuration
 
-Add this to your existing Ghostty configuration to enable the custom tabs:
+The custom tab strip uses the `tabs` titlebar style on macOS 26 and later.
+Set it in your Ghostty configuration:
 
 ```ini
 macos-titlebar-style = tabs
 ```
 
-Open **Tab Bar…** beside **Open Config** in the app menu to customize the
-appearance with a live preview. Settings apply to all windows immediately
-and are saved in the app's preferences, separately from the Ghostty config.
-
-| Setting | Options |
-| --- | --- |
-| Position | Top, bottom, left, right |
-| Style | Filled, outline, minimal |
-| Width and alignment | Fit title or equal width; leading or centered |
-| Dimensions | Tab height, spacing, roundness, sidebar width |
-| Close button | On hover, always, never |
-| Colors | Theme accent, random tab colors, color indicators, shuffle |
-| Details | Tab numbers, bar background, visibility with a single tab |
-
-Terminal themes, fonts, and key bindings continue to use the existing Ghostty
-configuration. Use **Restore defaults** in the Tab Bar window to reset its
-appearance settings.
+Open **Tab Bar…** beside **Open Config** in the app menu. Choose **Signal** or
+**Classic**, configure tab placement and sizing, and adjust pane headers,
+focus effects and status hints. The **Terminal** section controls the zsh
+Signal prompt, command blocks and optional Signal Void colors. Window opacity
+and blur follow your Ghostty configuration.
 
 The app builds as `GhosttyX.app` with bundle identifier
-`com.amsynist.ghosttyx`. See [Ghostty X build and implementation notes](GHOSTTY_X.md)
-for build commands, tests, and validation details.
+`com.amsynist.ghosttyx`. See the [build and implementation notes](GHOSTTY_X.md)
+for build commands, supported behavior and test coverage.
 
 ---
 

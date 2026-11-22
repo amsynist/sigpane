@@ -4,13 +4,14 @@ Ghostty X is a macOS appearance fork of Ghostty. Its default Signal interface
 adds session cards, a focus trace around split panes, and command blocks you
 can fold and copy inside the terminal.
 
-[![Ghostty X Signal walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-walkthrough.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-walkthrough.mp4)
+[![Ghostty X Signal walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-walkthrough.mp4)
 
-[Watch the full 52-second walkthrough (MP4)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-walkthrough.mp4) ·
+[Watch the 4K walkthrough (52 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-walkthrough.mp4) ·
 [Download the interactive Signal preview](docs/previews/signal-interface.html)
 
-The walkthrough and images are rendered from HTML with fictional terminal
-sessions over the teal cutting-mat wallpaper.
+The walkthrough and screenshots render fictional terminal sessions over the
+teal cutting-mat wallpaper at 3840 × 2496. Select any screenshot to open the
+full-resolution PNG.
 
 ## Terminal layouts
 
@@ -21,15 +22,15 @@ sidebar to numbered tiles.
 
 | Left sidebar | Right sidebar |
 | --- | --- |
-| ![Left session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-left.webp) | ![Right session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-right.webp) |
+| [![Left session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-left.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-left.png) | [![Right session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-right.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-right.png) |
 
 | Top tabs | Bottom tabs |
 | --- | --- |
-| ![Top session tabs above three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-top.webp) | ![Bottom session tabs below three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-bottom.webp) |
+| [![Top session tabs above three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-top.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-top.png) | [![Bottom session tabs below three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-bottom.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-bottom.png) |
 
 ## Command blocks and the Signal prompt
 
-![A selected command block with the keyboard copy hint](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-blocks.webp)
+[![A selected command block with the keyboard copy hint](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-blocks.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-blocks.png)
 
 - **Fold and reopen output.** Use a block’s chevron or press **Control-F** to
   fold or reopen eligible blocks at the shell prompt. Optional automatic
@@ -46,13 +47,13 @@ sidebar to numbered tiles.
 
 Choose **Tab Bar… → Terminal → Prompt style** to change the zsh prompt.
 
-![HUD Brackets in a terminal with a collapsed Signal sidebar](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-hud.webp)
+[![HUD Brackets in a terminal with a collapsed Signal sidebar](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-hud.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-hud.png)
 
-[Breadcrumb Rail](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-rail.webp) ·
-[Command Capsule](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-capsule.webp) ·
-[Tabbed Dock](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-dock.webp) ·
-[HUD Brackets](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-hud.webp) ·
-[Command Card](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/signal-card.webp)
+[Breadcrumb Rail](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-rail.png) ·
+[Command Capsule](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-capsule.png) ·
+[Tabbed Dock](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-dock.png) ·
+[HUD Brackets](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-hud.png) ·
+[Command Card](https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/4k/signal-card.png)
 
 ## Configuration
 

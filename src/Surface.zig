@@ -30,6 +30,7 @@ const termio = @import("termio.zig");
 const font = @import("font/main.zig");
 const Command = @import("Command.zig");
 const terminal = @import("terminal/main.zig");
+const terminal_fold = @import("terminal/fold.zig");
 const configpkg = @import("config.zig");
 const Duration = configpkg.Config.Duration;
 const input = @import("input.zig");
@@ -4028,6 +4029,20 @@ pub fn mouseButtonCallback(
                     prev.rectangle,
                 ));
             }
+        }
+
+        // Ghostty X: a plain click on a command line's fold label ("42
+        // lines") folds or opens that command's output.
+        if (release_pin) |pin| fold: {
+            if (self.mouse.selection_gesture.left_click_dragged) break :fold;
+            if (terminal_fold.targetAt(pin) == null) break :fold;
+            _ = terminal_fold.toggleAt(
+                self.renderer_state.terminal,
+                pin,
+                self.alloc,
+            );
+            try self.queueRender();
+            return true;
         }
 
         // Handle link clicking. We want to do this before we do mouse

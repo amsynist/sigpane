@@ -7,7 +7,10 @@ extension SplitView {
         let visibleSize: CGFloat
         let invisibleSize: CGFloat
         let color: Color
+        let accent: Color?
         @Binding var split: CGFloat
+
+        @State private var hovering = false
 
         private var visibleWidth: CGFloat? {
             switch direction {
@@ -60,7 +63,16 @@ extension SplitView {
                 Rectangle()
                     .fill(color)
                     .frame(width: visibleWidth, height: visibleHeight)
+                if let accent, hovering {
+                    Capsule()
+                        .fill(accent)
+                        .frame(width: direction == .horizontal ? 2 : 36, height: direction == .horizontal ? 36 : 2)
+                        .shadow(color: accent, radius: 4)
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.15), value: hovering)
+            .onHover { hovering = $0 }
             .backport.pointerStyle(pointerStyle)
             .onHover { isHovered in
                 // macOS 15+ we use the pointerStyle helper which is much less

@@ -54,3 +54,24 @@ BOOL GhosttyShowWindowSafely(
         return NO;
     }
 }
+
+NSFont * _Nullable GhosttyChromeFont(
+    NSInteger kind,
+    CGFloat size,
+    CGFloat weight
+) {
+    @try {
+        switch (kind) {
+            case 1:
+                return [NSFont monospacedSystemFontOfSize:size weight:weight];
+            case 2:
+                return [NSFont monospacedDigitSystemFontOfSize:size weight:weight];
+            case 3:
+                return [NSFont titleBarFontOfSize:size];
+            default:
+                return [NSFont systemFontOfSize:size weight:weight];
+        }
+    } @catch (NSException *exception) {
+        return nil;
+    }
+}

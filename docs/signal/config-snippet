@@ -1,0 +1,15 @@
+# Lines to add to ~/.config/ghostty/config for the Signal look.
+# The chrome itself (sidebar, pane headers, trace, status line) is set in the app:
+# Ghostty menu > Tab Bar…
+
+theme = signal-void
+
+# Panes that do not have focus dim to this much of their brightness.
+unfocused-split-opacity = 0.62
+
+# Breathing room between a pane's frame and its text.
+window-padding-x = 14
+window-padding-y = 10
+
+# The custom tab strip and sidebar need this titlebar style (macOS 26 or later).
+macos-titlebar-style = tabs

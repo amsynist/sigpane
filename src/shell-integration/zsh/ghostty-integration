@@ -90,8 +90,203 @@ _entrypoint() {
     precmd_functions+=(_ghostty_deferred_init)
 }
 
+# Ghostty X: the Signal prompt. When the app sets GHOSTTY_X_PROMPT, Ghostty X
+# draws its own two-line prompt (directory and git branch chips, then an arrow
+# pointer and the input line, with the Python environment on the right) and takes over from a prompt theme
+# such as Starship, inside Ghostty X only. Everything here uses zsh builtins:
+# no process is started to draw a prompt.
+_ghostty_x_precmd() {
+    builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+    if [[ -n ${_ghostty_x_highlight_saved-} ]]; then
+        zle_highlight=("${_ghostty_x_highlight[@]}")
+        builtin unset _ghostty_x_highlight_saved
+    fi
+    builtin local dir=$PWD gitdir= head= branch= line= env= left= right=
+
+    # Git branch: walk up to the nearest .git and read its HEAD.
+    while builtin true; do
+        if [[ -d $dir/.git ]]; then
+            gitdir=$dir/.git
+            break
+        elif [[ -f $dir/.git ]]; then
+            # A worktree or submodule: the file points at the real git dir.
+            builtin read -r head < $dir/.git 2>/dev/null
+            if [[ $head == 'gitdir: '* ]]; then
+                gitdir=${head#gitdir: }
+                [[ $gitdir == /* ]] || gitdir=$dir/$gitdir
+            fi
+            break
+        fi
+        [[ -z $dir || $dir == / ]] && break
+        dir=${dir:h}
+    done
+    if [[ -n $gitdir && -r $gitdir/HEAD ]]; then
+        builtin read -r head < $gitdir/HEAD 2>/dev/null
+        if [[ $head == 'ref: refs/heads/'* ]]; then
+            branch=${head#ref: refs/heads/}
+        else
+            branch=${head[1,7]}
+        fi
+    fi
+
+    # Python environment: its version is read once per environment.
+    if [[ -n ${VIRTUAL_ENV-} ]]; then
+        if [[ ${_ghostty_x_env_path-} != $VIRTUAL_ENV ]]; then
+            builtin typeset -g _ghostty_x_env_path=$VIRTUAL_ENV _ghostty_x_env_version=
+            if [[ -r $VIRTUAL_ENV/pyvenv.cfg ]]; then
+                while builtin read -r line; do
+                    if [[ $line == (version|version_info)' = '* ]]; then
+                        _ghostty_x_env_version=${line#*= }
+                        _ghostty_x_env_version=${_ghostty_x_env_version%%.[a-z]*}
+                        break
+                    fi
+                done < $VIRTUAL_ENV/pyvenv.cfg
+            fi
+        fi
+        env=${${VIRTUAL_ENV_PROMPT:-${VIRTUAL_ENV:t}}//[() ]/}
+    fi
+
+    # The prompt has five looks, chosen in the app's settings. The app writes the choice
+    # to a small file, read here before every prompt, so open shells follow a change.
+    builtin local style=card
+    if [[ -n ${GHOSTTY_X_STYLE_FILE-} && -r $GHOSTTY_X_STYLE_FILE ]]; then
+        builtin read -r style < $GHOSTTY_X_STYLE_FILE 2>/dev/null
+    fi
+
+    # The shell prints only text. The app draws the graphics (frames, icons, the
+    # pointer) over the cells left for them, which are marked with blank characters
+    # one cell wide: U+2005, U+2006, U+2008 and U+200A open a directory, branch,
+    # environment and key-hint chip, U+2009 closes one, and U+2002 is where the
+    # pointer goes. U+2000, U+2001, U+2004 and U+2007 name the look, so the app draws
+    # the one this text was laid out for. A command that failed is not shown here, on
+    # the prompt after it: the terminal marks the failed command's own line and the
+    # app shows it on that block.
+    builtin local mD=$'\u2005' mG=$'\u2006' mE=$'\u2008' mK=$'\u200a' mX=$'\u2009'
+    builtin local ptr=$'\u2002'
+    builtin local dot=$'\u00b7'
+    builtin local ver=${_ghostty_x_env_version-} b=${branch//\%/%%} e=${env//\%/%%}
+    # A blank row sets the prompt apart from what is above it, the first prompt of a
+    # session included: something may have been printed before it (a login message,
+    # direnv), and the app draws the prompt's frame and labels into that row.
+    builtin local gap=$'\n'
+    RPROMPT=
+
+    case $style in
+    rail)
+        # The path as a breadcrumb, its last part bright; the branch after it; the
+        # environment at the far right of the same row. The pointer row is indented
+        # for the rail that runs down the left.
+        builtin local -a parts
+        parts=("${(@s:/:)${(%):-%~}}")
+        [[ -z ${parts[1]} ]] && parts[1]=/
+        (( ${#parts} > 4 )) && parts=($'\u2026' "${(@)parts[-3,-1]}")
+        builtin local crumbs= i
+        for (( i = 1; i <= ${#parts}; i++ )); do
+            if (( i == ${#parts} )); then
+                crumbs+="%f%B${parts[i]//\%/%%}%b"
+            else
+                crumbs+="%F{8}${parts[i]//\%/%%} "$'\u203a'" "
+            fi
+        done
+        left=$'\u2000'" ${crumbs}"
+        # One cell before the branch and one after its mark: the app's icon sits in the
+        # mark's own cell.
+        [[ -n $branch ]] && left+=" ${mG} %F{5}${b}%f${mX}"
+        if [[ -n $env ]]; then
+            # Written so that it ends in the last column, then the cursor is put back,
+            # so the row's own text is not disturbed. The two marks are where the app
+            # draws the dot.
+            builtin local -i width=$(( 2 + ${#env} ))
+            [[ -n $ver ]] && (( width += 4 + ${#ver} ))
+            left+="%{"$'\e7\e['"$(( COLUMNS - width + 1 ))G${mE}${mX}"$'\e[1;33m'"${e}"$'\e[0;38;5;245m'"${ver:+ py $ver}"$'\e[0m'$'\e8'"%}"
+        fi
+        PS1="${gap}${left}"$'\n'"  ${ptr}  "
+        ;;
+    capsule)
+        # One row. A round badge leads: the environment when one is active, the
+        # directory otherwise. The key hint closes the row.
+        # The badge is drawn at the capsule's head, over the look's mark and the three
+        # cells after it. The version is in the environment's color, as its caption.
+        if [[ -n $env ]]; then
+            left="${mE} ${mX}%B${e}%b%F{3}${ver:+ py $ver}%f %F{8}"$'\u2502'"%f %F{245}%2~%f"
+        else
+            left="${mD} ${mX}%B%2~%b"
+        fi
+        [[ -n $branch ]] && left+=" ${mG} %F{5}${b}%f${mX}"
+        PS1="${gap}"$'\u2001'"${left} %F{8}"$'\u2502'"%f ${ptr} "
+        RPROMPT="${mK}   ${mX} "
+        ;;
+    dock)
+        # A row of tabs (directory, branch, environment) over the row you type on.
+        # One cell after the directory's mark: with the mark and the look's own mark
+        # before it, that is the room the app's folder icon takes. Three cells after
+        # the pointer for its tile, then one more before the text.
+        left="${mD} %F{4}%B%2~%b%f${mX}"
+        [[ -n $branch ]] && left+=" ${mG}  %F{5}${b}%f${mX}"
+        [[ -n $env ]] && left+=" ${mE}  %F{3}${e}${ver:+ $dot py $ver}%f${mX}"
+        PS1="${gap}"$'\u2004'"${left}"$'\n'"${ptr}   "
+        # Room at the right for the small "READY" the app draws there.
+        RPROMPT="${mK}        ${mX}"
+        ;;
+    hud)
+        # Tags with room before each for the app's color bar and label, then the row
+        # you type on, with room at the right for the key hints.
+        left="${mD}   %2~${mX}"
+        [[ -n $branch ]] && left+=" ${mG}   ${b}${mX}"
+        [[ -n $env ]] && left+=" ${mE}   ${e}${ver:+ $dot py $ver}${mX}"
+        PS1="${gap}"$'\u2007'"${left}"$'\n'" ${ptr} "
+        RPROMPT="${mK}                    ${mX} "
+        ;;
+    *)
+        # The card: outlined chips, then the pointer.
+        left="${mD}  %F{4}%2~%f${mX}"
+        [[ -n $branch ]] && left+=" ${mG}  %F{5}${b}%f${mX}"
+        PS1="${gap}${left}"$'\n'"${ptr}  "
+        [[ -n $env ]] && RPROMPT="${mE}  %F{3}py ${ver:+$ver $dot }${e}%f${mX}"
+        ;;
+    esac
+    # The integration compares PS1 with the one it last saw to decide whether
+    # a theme rewrote it. This prompt is rebuilt on purpose every time.
+    builtin typeset -g _ghostty_saved_ps1=$PS1
+}
+
+# Ghostty X: when a command line is accepted, its prompt shrinks to a blank
+# spacer row and the caret, so only the prompt being typed at shows the chips
+# and every finished command is one compact block. The prompt marks are part
+# of the text because this redraw replaces the marked prompt.
+_ghostty_x_line_finish() {
+    builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+    PS1=$'%{\e]133;A;cl=line\a%}\n%{\e]133;P;k=s\a%}\u2002 %{\e]133;B\a%}'
+    RPROMPT=
+    builtin typeset -g _ghostty_x_spaced=1
+    # The command of a finished block is shown bold. zle's own highlight setting is
+    # borrowed for this one redraw and handed back before the next prompt.
+    builtin typeset -ga _ghostty_x_highlight
+    _ghostty_x_highlight=("${zle_highlight[@]}")
+    builtin typeset -g _ghostty_x_highlight_saved=1
+    zle_highlight=(${zle_highlight:#default:*} default:bold)
+    builtin zle .reset-prompt 2>/dev/null
+}
+
+_ghostty_x_prompt_setup() {
+    builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+    # Starship redraws its own prompt from these hooks on every command.
+    precmd_functions=(${precmd_functions:#*starship*})
+    preexec_functions=(${preexec_functions:#*starship*})
+    builtin zmodload -i zsh/zleparameter 2>/dev/null
+    if [[ ${widgets[zle-keymap-select]-} == user:*starship* ]]; then
+        builtin zle -D zle-keymap-select
+    fi
+    # Run after any other prompt theme, and before the integration marks the prompt.
+    precmd_functions=(${precmd_functions:#_ghostty_x_precmd} _ghostty_x_precmd)
+    _ghostty_x_precmd
+}
+
 _ghostty_deferred_init() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
+
+    # Ghostty X: the built-in Signal prompt, when the app asks for it.
+    [[ -n ${GHOSTTY_X_PROMPT-} ]] && _ghostty_x_prompt_setup
 
     # Enable semantic markup with OSC 133.
     _ghostty_precmd() {
@@ -294,6 +489,13 @@ _ghostty_deferred_init() {
             builtin print -nu \$_ghostty_fd '\\e]133;P;k=i\\a\\e]133;B\\a'
         fi
     "${functions[_ghostty_zle_line_init]}
+
+    # Ghostty X: the Signal prompt redraws itself small when a line is accepted.
+    if [[ -n ${GHOSTTY_X_PROMPT-} ]]; then
+        (( $+functions[_ghostty_zle_line_finish] )) || _ghostty_zle_line_finish() { builtin true; }
+        functions[_ghostty_zle_line_finish]+="
+            _ghostty_x_line_finish"
+    fi
 
     # Add Ghostty binary to PATH if the path feature is enabled
     if [[ "$GHOSTTY_SHELL_FEATURES" == *"path"* ]] && [[ -n "$GHOSTTY_BIN_DIR" ]]; then

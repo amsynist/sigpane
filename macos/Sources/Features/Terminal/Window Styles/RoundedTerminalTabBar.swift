@@ -15,6 +15,28 @@ class RoundedTerminalTabModel: ObservableObject {
         let selected: Bool
         /// Random color slot (index into `TabBarSettings.randomPaletteIndices`).
         var autoColor: Int?
+        /// Second line of a Signal session card: the tab's working directory.
+        var subtitle: String?
+        /// The directory's own name, set when the title is nothing but the directory
+        /// (what shells show by default), so a card does not say the same path twice.
+        var shortTitle: String?
+
+        /// The title a Signal card, chip or titlebar shows.
+        var displayTitle: String { shortTitle ?? title }
+    }
+
+    /// The focused pane's working directory.
+    static func directory(of window: NSWindow) -> String? {
+        guard let pwd = (window.windowController as? BaseTerminalController)?.focusedSurface?.pwd,
+              !pwd.isEmpty else { return nil }
+        return pwd
+    }
+
+    /// The directory's last component ("~" for home) when `title` is only that directory.
+    static func shortTitle(_ title: String, directory: String?) -> String? {
+        guard let directory, SignalText.isDirectoryTitle(title, path: directory) else { return nil }
+        let tilde = SignalText.tilde(directory)
+        return tilde == "~" || directory == "/" ? tilde : (directory as NSString).lastPathComponent
     }
 
     /// Picks a random color slot that differs from the given neighbours.
@@ -73,17 +95,32 @@ class RoundedTerminalTabModel: ObservableObject {
         }
         // New tabs pick a color unlike the tabs on either side of them.
         let terminals = windows.map { $0 as? TerminalWindow }
+        var assignedColor = false
         for (index, terminal) in terminals.enumerated() where terminal?.autoTabColorSlot == nil {
+            guard let terminal else { continue }
             let before = index > 0 ? terminals[index - 1]?.autoTabColorSlot : nil
             let after = index + 1 < terminals.count ? terminals[index + 1]?.autoTabColorSlot : nil
-            terminal?.autoTabColorSlot = Self.randomColorSlot(avoiding: [before, after])
+            terminal.autoTabColorSlot = Self.randomColorSlot(avoiding: [before, after])
+            assignedColor = true
+        }
+        if assignedColor {
+            // Panes read their tint from the window, so tell them once it has a color.
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .ghosttyXTabColorsDidShuffle, object: nil)
+            }
         }
         tabs = windows.map { window in
-            Tab(id: ObjectIdentifier(window), window: Weak(window),
-                title: window.title.isEmpty ? "Terminal" : window.title,
-                color: (window as? TerminalWindow)?.tabColor ?? .none,
-                selected: window === (group?.selectedWindow ?? hostWindow),
-                autoColor: (window as? TerminalWindow)?.autoTabColorSlot)
+            SignalDemo.trace("title [\(window.title)]")
+            let clean = SignalText.chromeSafe(window.title)
+            let title = clean.isEmpty ? "Terminal" : clean
+            let directory = Self.directory(of: window)
+            return Tab(id: ObjectIdentifier(window), window: Weak(window),
+                       title: title,
+                       color: (window as? TerminalWindow)?.tabColor ?? .none,
+                       selected: window === (group?.selectedWindow ?? hostWindow),
+                       autoColor: (window as? TerminalWindow)?.autoTabColorSlot,
+                       subtitle: directory.map { SignalText.chromeSafe(SignalText.abbreviate(path: $0)) },
+                       shortTitle: Self.shortTitle(title, directory: directory))
         }
     }
 
@@ -196,6 +233,29 @@ struct RoundedTabTheme: Equatable {
         guard let index = accent.paletteIndex, palette.indices.contains(index) else { return foreground }
         return palette[index]
     }
+
+    /// The palette color for a random tab color slot.
+    func color(slot: Int) -> NSColor? {
+        let indices = TabBarSettings.randomPaletteIndices
+        let index = indices[abs(slot) % indices.count]
+        return palette.indices.contains(index) ? palette[index] : nil
+    }
+
+    /// A tab's color: picked by hand first, else its random palette color.
+    func color(picked: TerminalTabColor, slot: Int?, settings: TabBarSettings) -> NSColor? {
+        if let color = picked.displayColor { return color }
+        guard settings.tabColors == .random, let slot else { return nil }
+        return color(slot: slot)
+    }
+
+    /// The color a window's Signal chrome is tinted with: its tab's color while the tint
+    /// follows the tab, else the accent.
+    @MainActor
+    func signal(for window: NSWindow?, settings: TabBarSettings) -> NSColor {
+        let fallback = self.accent(settings.accent)
+        guard settings.tintFollowsTab, let window = window as? TerminalWindow else { return fallback }
+        return color(picked: window.tabColor, slot: window.autoTabColorSlot, settings: settings) ?? fallback
+    }
 }
 
 private extension NSColor {
@@ -252,6 +312,67 @@ final class RoundedTerminalTabBar: NSView {
     private var observations: [AnyCancellable] = []
     private(set) var displayedTabs: [RoundedTerminalTabModel.Tab] = []
 
+    // Signal interface
+    private let indicator = TabSelectionIndicator()
+    private var indicatorTarget: NSRect?
+    private var hasPopulated = false
+    private var loadSamples: [Double] = []
+    private var loadTimer: Timer?
+    private lazy var actionButtons: [TitlebarActionButton] = {
+        let kinds: [TitlebarActionButton.Kind] = [.splitRight, .splitDown, .commands]
+        return kinds.map { kind in
+            let button = TitlebarActionButton()
+            button.kind = kind
+            button.toolTip = kind.title
+            button.setAccessibilityLabel(kind.title)
+            button.onMouseDown = { [weak self] _ in self?.perform(kind) }
+            return button
+        }
+    }()
+
+    private let railToggle = RailToggleButton()
+    /// When this bar last animated a selection change, so one change animates once.
+    private var animatedChangeAt: TimeInterval = 0
+    private let indicatorMotion = SignalMotion()
+    /// Tabs whose arrival this bar has already shown (or that were never new to it).
+    private var entered: Set<ObjectIdentifier> = []
+
+    /// The latest selection change in each tab group. Every tab is its own window with its
+    /// own strip, so the strip that comes forward reads where the selection came from here.
+    private struct SelectionChange {
+        var previous: ObjectIdentifier?
+        var current: ObjectIdentifier
+        var at: TimeInterval
+    }
+    private static var selectionHistory: [ObjectIdentifier: SelectionChange] = [:]
+
+    private var groupKey: ObjectIdentifier {
+        if let group = model.hostWindow?.tabGroup { return ObjectIdentifier(group) }
+        return ObjectIdentifier(model)
+    }
+
+    /// Called when the selected tab's color changes (the window's Signal chrome follows it).
+    var onSignalChange: (() -> Void)?
+
+    /// Called on the selected tab's own strip when the selection has just moved to it.
+    /// The argument is how many positions it moved (negative is towards the first tab).
+    var onSelectionChange: ((Int) -> Void)?
+
+    /// False while this strip's window is not on screen; its timers stop.
+    var isLive = true {
+        didSet { if isLive != oldValue { updateLoadTimer() } }
+    }
+
+    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// How long motion in a window should hold before it starts. A window made a moment
+    /// ago is still starting its terminal and laying itself out, and anything that moved
+    /// through that would stutter or be missed.
+    static func settleDelay(for window: NSWindow?) -> TimeInterval {
+        guard let window = window as? TerminalWindow else { return 0 }
+        return ProcessInfo.processInfo.systemUptime - window.bornAt < 0.7 ? 0.24 : 0
+    }
+
     private(set) var settings: TabBarSettings
     var theme = RoundedTabTheme.current {
         didSet { if theme != oldValue { applyAppearance() } }
@@ -265,6 +386,41 @@ final class RoundedTerminalTabBar: NSView {
 
     /// In the titlebar while tabs live elsewhere: draw nothing, move the window on drag.
     var isPlaceholder: Bool { placement == .titlebar && settings.position != .top }
+
+    /// A sidebar in the Signal design: session cards with a sliding selection.
+    var isSignalRail: Bool { isVertical && settings.isSignal }
+
+    /// A horizontal strip (top or bottom) in the Signal design: chips with a sliding selection.
+    var isSignalStrip: Bool { !isVertical && !isPlaceholder && settings.isSignal }
+
+    /// A Signal sidebar shrunk to its numbered tiles.
+    var isRailCollapsed: Bool { isSignalRail && settings.sidebarCollapsed }
+
+    /// A tab's color: picked by hand first, else its random palette color.
+    func color(for tab: RoundedTerminalTabModel.Tab) -> NSColor? {
+        theme.color(picked: tab.color, slot: tab.autoColor, settings: settings)
+    }
+
+    /// The color the Signal chrome takes: the selected tab's color, else the accent.
+    var signalColor: NSColor {
+        let accent = theme.accent(settings.accent)
+        guard settings.tintFollowsTab, let selected = displayedTabs.first(where: \.selected) else { return accent }
+        return color(for: selected) ?? accent
+    }
+
+    /// Frame of the selected tab in this bar's coordinates while it is scrolled into view.
+    var selectedTabFrame: NSRect? {
+        guard let index = displayedTabs.firstIndex(where: \.selected), let frame = tabFrame(at: index),
+              scroll.frame.insetBy(dx: -1, dy: -1).contains(NSPoint(x: frame.midX, y: frame.midY)) else { return nil }
+        return frame
+    }
+
+    private var showsActions: Bool { isPlaceholder && settings.isSignal && settings.titlebarActions }
+
+    /// Height reserved at the foot of a Signal sidebar for the load sparkline.
+    private var footerHeight: CGFloat {
+        isSignalRail && !isRailCollapsed && settings.systemLoad && placement != .titlebar ? 34 : 0
+    }
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -287,21 +443,27 @@ final class RoundedTerminalTabBar: NSView {
         scroll.hasVerticalScroller = false
         scroll.automaticallyAdjustsContentInsets = false
         scroll.documentView = document
+        document.addSubview(indicator)
+        indicator.isHidden = true
         addButton.target = self
         addButton.action = #selector(newTab)
         addButton.toolTip = "New tab"
         addButton.setAccessibilityLabel("New tab")
         addButton.menuProvider = { [weak self] in self?.barMenu() }
-        header.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        header.font = SignalFont.system(10.5, .semibold)
         header.isSelectable = false
         header.lineBreakMode = .byClipping
         addSubview(scroll)
         addSubview(header)
-        headerCount.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
+        headerCount.font = SignalFont.digits(10.5, .semibold)
         headerCount.alignment = .right
         headerCount.isSelectable = false
         addSubview(headerCount)
         addSubview(addButton)
+        for button in actionButtons { addSubview(button) }
+        railToggle.onMouseDown = { [weak self] _ in self?.toggleSidebar() }
+        railToggle.setAccessibilityLabel("Collapse or expand the sidebar")
+        addSubview(railToggle)
         setAccessibilityElement(false)
         observations = [
             model.$tabs.sink { [weak self] tabs in self?.reconcile(tabs) },
@@ -342,16 +504,54 @@ final class RoundedTerminalTabBar: NSView {
     private func applyAppearance() {
         scroll.isHidden = isPlaceholder
         addButton.isHidden = isPlaceholder
-        header.isHidden = isPlaceholder || !isVertical
+        header.isHidden = isPlaceholder || !isVertical || isRailCollapsed
         headerCount.isHidden = header.isHidden
-        header.textColor = theme.foreground.withAlphaComponent(0.4)
-        headerCount.textColor = theme.foreground.withAlphaComponent(0.4)
+        railToggle.isHidden = isPlaceholder || !isSignalRail
+        railToggle.tint = theme.foreground
+        railToggle.collapsed = isRailCollapsed
+        railToggle.toolTip = isRailCollapsed ? "Expand sidebar" : "Collapse sidebar"
+        updateHeader()
         addButton.theme = theme
         addButton.settings = settings
         addButton.isRow = isVertical
+        addButton.compact = isRailCollapsed
+        for button in actionButtons {
+            button.isHidden = !showsActions
+            button.tint = theme.foreground
+        }
+        syncSignalColor()
+        updateLoadTimer()
         for cell in cells.values { cell.appearanceDidChange() }
         needsLayout = true
         needsDisplay = true
+    }
+
+    private func updateHeader() {
+        let signal = isSignalRail
+        let color = theme.foreground.withAlphaComponent(signal ? 0.32 : 0.4)
+        let font: NSFont = signal
+            ? SignalFont.mono(10, .medium)
+            : SignalFont.system(10.5, .semibold)
+        let countFont: NSFont = signal ? font : SignalFont.digits(10.5, .semibold)
+        let trailing = NSMutableParagraphStyle()
+        trailing.alignment = .right
+        header.attributedStringValue = NSAttributedString(string: signal ? "SESSIONS" : "TABS", attributes: [
+            .font: font, .foregroundColor: color, .kern: signal ? 2.0 : 0.0,
+        ])
+        let count = displayedTabs.count
+        headerCount.attributedStringValue = NSAttributedString(
+            string: signal ? SignalText.ordinal(count - 1) : "\(count)",
+            attributes: [.font: countFont, .foregroundColor: color, .paragraphStyle: trailing])
+    }
+
+    /// Pushes the selected tab's color to everything that is tinted by it.
+    private func syncSignalColor() {
+        let color = signalColor
+        addButton.signalColor = isSignalRail ? color : nil
+        indicator.color = color
+        indicator.glow = settings.focusGlow
+        needsDisplay = true
+        onSignalChange?()
     }
 
     /// Horizontal strips keep `+` beside the scroller; sidebars scroll it with the list.
@@ -363,6 +563,7 @@ final class RoundedTerminalTabBar: NSView {
     }
 
     @objc private func newTab() { model.newTab() }
+    @objc private func toggleSidebar() { store.settings.sidebarCollapsed.toggle() }
 
     private func reconcile(_ tabs: [RoundedTerminalTabModel.Tab]) {
         let countChanged = tabs.count != displayedTabs.count
@@ -371,14 +572,44 @@ final class RoundedTerminalTabBar: NSView {
         for id in cells.keys where !keep.contains(id) {
             cells.removeValue(forKey: id)?.removeFromSuperview()
         }
+        entered.formIntersection(keep)
+        // Each tab is its own window with its own strip. A strip that is not on screen
+        // shows nothing, so it leaves arrivals for when it comes forward.
+        let onScreen = window?.isFrontTab == true
+        let now = ProcessInfo.processInfo.systemUptime
+        if let selected = tabs.first(where: \.selected) {
+            let key = groupKey
+            let known = Self.selectionHistory[key]
+            if known?.current != selected.id {
+                // Entries are tiny, but closed tab groups would otherwise stay forever.
+                if Self.selectionHistory.count > 64 { Self.selectionHistory.removeAll() }
+                Self.selectionHistory[key] = SelectionChange(previous: known?.current, current: selected.id, at: now)
+            }
+        }
         for (index, tab) in tabs.enumerated() {
             let cell = cells[tab.id] ?? RoundedTabCell(owner: self)
-            if cell.superview == nil { document.addSubview(cell); cells[tab.id] = cell }
-            cell.update(tab, index: index, count: tabs.count)
+            var entering = false
+            if cell.superview == nil {
+                document.addSubview(cell)
+                cells[tab.id] = cell
+                if !(tab.window.value is TerminalWindow) { entering = hasPopulated }
+            }
+            // A tab that was just opened animates in, once, in the strip that is showing.
+            // Tabs that were already there do not.
+            if let window = tab.window.value as? TerminalWindow, !entered.contains(tab.id) {
+                if now - window.bornAt > 2 {
+                    entered.insert(tab.id)
+                } else if onScreen {
+                    entered.insert(tab.id)
+                    entering = true
+                }
+            }
+            cell.update(tab, index: index, count: tabs.count, entering: entering)
         }
+        if !tabs.isEmpty { hasPopulated = true }
         attachAddButton()
-        header.stringValue = "TABS"
-        headerCount.stringValue = "\(tabs.count)"
+        updateHeader()
+        syncSignalColor()
         needsLayout = true
         needsDisplay = true
         layoutSubtreeIfNeeded()
@@ -392,8 +623,27 @@ final class RoundedTerminalTabBar: NSView {
 
     override func layout() {
         super.layout()
-        guard !isPlaceholder else { return }
+        guard !isPlaceholder else { layoutActions(); return }
         if isVertical { layoutVertical() } else { layoutHorizontal() }
+    }
+
+    /// Titlebar buttons sit at the trailing end of the placeholder strip.
+    private func layoutActions() {
+        var x = bounds.width - 10
+        for button in actionButtons.reversed() {
+            x -= 28
+            button.frame = NSRect(x: x, y: ((bounds.height - 24) / 2).rounded(), width: 28, height: 24)
+            x -= 2
+        }
+    }
+
+    private func perform(_ kind: TitlebarActionButton.Kind) {
+        guard let controller = model.hostWindow?.terminalController else { return }
+        switch kind {
+        case .splitRight: controller.splitRight(self)
+        case .splitDown: controller.splitDown(self)
+        case .commands: controller.toggleCommandPalette(self)
+        }
     }
 
     private func layoutHorizontal() {
@@ -421,9 +671,11 @@ final class RoundedTerminalTabBar: NSView {
             start = max(inset, ((bounds.width - viewport - gap - tab) / 2).rounded())
         }
         let y = ((height - tab) / 2).rounded()
-        scroll.frame = NSRect(x: start, y: 0, width: viewport, height: height)
-        document.frame = NSRect(x: 0, y: 0, width: content, height: height)
-        var x: CGFloat = 0
+        // Signal strips leave room at both ends, so the selection glow is not cut off.
+        let lead: CGFloat = isSignalStrip ? 6 : 0
+        scroll.frame = NSRect(x: start - lead, y: 0, width: viewport + lead * 2, height: height)
+        document.frame = NSRect(x: 0, y: 0, width: content + lead * 2, height: height)
+        var x: CGFloat = lead
         for (index, item) in displayedTabs.enumerated() {
             guard let cell = cells[item.id] else { continue }
             cell.frame = NSRect(x: x, y: y, width: widths[index], height: tab)
@@ -432,28 +684,187 @@ final class RoundedTerminalTabBar: NSView {
         header.frame = .zero
         headerCount.frame = .zero
         addButton.frame = NSRect(x: start + viewport + (count > 0 ? gap : 0), y: y, width: tab, height: tab)
+        placeIndicator()
     }
 
     private func layoutVertical() {
         let s = settings
+        let signal = isSignalRail
         let pad: CGFloat = 10
         let headerHeight: CGFloat = 26
-        let row = CGFloat(s.tabHeight)
+        let row = signal ? TabBarSettings.signalRowHeight : CGFloat(s.tabHeight)
         let gap = CGFloat(s.spacing)
-        header.frame = NSRect(x: pad + 6, y: pad + 4, width: bounds.width - pad * 2 - 40, height: 14)
-        headerCount.frame = NSRect(x: bounds.width - pad - 6 - 30, y: pad + 4, width: 30, height: 14)
-        let top = pad + headerHeight
-        scroll.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top))
+        // Signal sidebars end with a shorter dashed "New session" row.
+        let addHeight: CGFloat = signal ? 38 : row
+        let addGap: CGFloat = signal ? 4 : 0
+        // Room above the first card, so the selection glow is not cut off by the scroller.
+        let lead: CGFloat = signal ? 8 : 0
+        // Signal sidebars carry the collapse button at the header's trailing end.
+        let toggle: CGFloat = signal ? 26 : 0
+        // Never a negative size: a collapsed sidebar is narrower than the header's margins.
+        header.frame = NSRect(x: pad + 6, y: pad + 4, width: max(0, bounds.width - pad * 2 - 40 - toggle), height: 14)
+        headerCount.frame = NSRect(x: bounds.width - pad - 6 - 30 - toggle, y: pad + 4, width: 30, height: 14)
+        railToggle.frame = isRailCollapsed
+            ? NSRect(x: ((bounds.width - 26) / 2).rounded(), y: pad, width: 26, height: 22)
+            : NSRect(x: bounds.width - pad - 26, y: pad, width: 26, height: 22)
+        let top = pad + headerHeight - lead
+        scroll.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top - footerHeight))
         let count = displayedTabs.count
-        let listHeight = CGFloat(count) * row + CGFloat(count) * gap + row + pad
+        let listHeight = lead + CGFloat(count) * row + CGFloat(count) * gap + addGap + addHeight + pad
         document.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(listHeight, scroll.frame.height))
-        var y: CGFloat = 0
+        var y: CGFloat = lead
         let width = max(0, bounds.width - pad * 2)
         for item in displayedTabs {
             cells[item.id]?.frame = NSRect(x: pad, y: y, width: width, height: row)
             y += row + gap
         }
-        addButton.frame = NSRect(x: pad, y: y, width: width, height: row)
+        addButton.frame = NSRect(x: pad, y: y + addGap, width: width, height: addHeight)
+        placeIndicator()
+    }
+
+    /// Moves the sliding highlight behind the selected tab. It springs to a newly selected
+    /// tab; resizes and first placement are immediate.
+    private func placeIndicator() {
+        guard isSignalRail || isSignalStrip, let selected = displayedTabs.first(where: \.selected),
+              let cell = cells[selected.id] else {
+            indicator.isHidden = true
+            indicatorTarget = nil
+            return
+        }
+        // A tab that has just been added or is being removed has no frame yet. There is
+        // nothing to put the highlight behind until the strip has been laid out.
+        guard cell.frame.width >= 1, cell.frame.height >= 1 else {
+            indicatorMotion.stop()
+            indicator.isHidden = true
+            indicatorTarget = nil
+            return
+        }
+        let outset = TabSelectionIndicator.outset
+        let target = cell.frame.insetBy(dx: -outset, dy: -outset)
+        indicator.isHidden = false
+        indicator.underline = !isVertical
+        indicator.radius = isVertical ? 10 : min(8, cell.frame.height / 2)
+
+        // A selection change that just happened in this tab group, not yet animated here.
+        // The strip coming forward may never have seen the old selection, so it starts
+        // the highlight from the previously selected tab.
+        var origin: NSRect?
+        var delta = 0
+        let now = ProcessInfo.processInfo.systemUptime
+        // A strip that is not on screen only keeps the highlight in place. The change
+        // stays unplayed, so the strip plays it when its window comes forward.
+        guard window?.isFrontTab == true else {
+            indicatorMotion.stop()
+            indicatorTarget = target
+            indicator.frame = target
+            return
+        }
+        if let change = Self.selectionHistory[groupKey], change.current == selected.id,
+           change.at > animatedChangeAt, now - change.at < 0.8 {
+            animatedChangeAt = change.at
+            if let previous = change.previous, let previousCell = cells[previous],
+               let from = displayedTabs.firstIndex(where: { $0.id == previous }),
+               let to = displayedTabs.firstIndex(where: { $0.id == selected.id }) {
+                origin = previousCell.frame.insetBy(dx: -outset, dy: -outset)
+                delta = to - from
+            }
+        }
+
+        guard origin != nil || indicatorTarget != target else { return }
+        let moved = indicatorTarget.map { abs($0.minY - target.minY) > 0.5 || abs($0.minX - target.minX) > 0.5 } ?? false
+        indicatorTarget = target
+        guard origin != nil || moved, settings.animations, !Self.reduceMotion else {
+            indicatorMotion.stop()
+            indicator.frame = target
+            return
+        }
+        // Slight overshoot, so the highlight settles like a spring.
+        let start = origin ?? indicator.frame
+        indicatorMotion.run(
+            duration: 0.42, curve: .spring, delay: Self.settleDelay(for: window)
+        ) { [weak self] progress in
+            guard let self else { return }
+            // The spring runs about a tenth past its end. Going from a large frame to a
+            // small one, that tenth can be more than the small one's size, and a view
+            // must never be given a negative size.
+            self.indicator.frame = NSRect(
+                x: start.minX + (target.minX - start.minX) * progress,
+                y: start.minY + (target.minY - start.minY) * progress,
+                width: max(0, start.width + (target.width - start.width) * progress),
+                height: max(0, start.height + (target.height - start.height) * progress))
+        }
+        if delta != 0, selected.window.value === model.hostWindow { onSelectionChange?(delta) }
+    }
+
+    // MARK: System load (Signal sidebar footer)
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateLoadTimer()
+    }
+
+    private func updateLoadTimer() {
+        guard window != nil, isLive, footerHeight > 0 else {
+            loadTimer?.invalidate()
+            loadTimer = nil
+            return
+        }
+        guard loadTimer == nil else { return }
+        sampleLoad()
+        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                self.sampleLoad()
+            }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        loadTimer = timer
+    }
+
+    private func sampleLoad() {
+        var load = [Double](repeating: 0, count: 3)
+        guard getloadavg(&load, 3) > 0 else { return }
+        loadSamples.append(load[0])
+        if loadSamples.count > 28 { loadSamples.removeFirst(loadSamples.count - 28) }
+        // Only the footer changes.
+        setNeedsDisplay(NSRect(x: 0, y: bounds.height - footerHeight, width: bounds.width, height: footerHeight))
+    }
+
+    private func drawFooter() {
+        let height = footerHeight
+        guard height > 0 else { return }
+        let fg = theme.foreground
+        let font = SignalFont.mono(10, .medium)
+        let top = bounds.height - height
+        let label = NSAttributedString(string: "LOAD", attributes: [
+            .font: font, .foregroundColor: fg.withAlphaComponent(0.32), .kern: 1.5,
+        ])
+        let labelSize = label.safeSize()
+        let lineY = (top + (height - 10 - labelSize.height) / 2).rounded()
+        label.safeDraw(at: NSPoint(x: 16, y: lineY))
+        let reading = loadSamples.last.map { String(format: "%.2f", $0) } ?? "--"
+        let value = NSAttributedString(string: reading, attributes: [
+            .font: font, .foregroundColor: fg.withAlphaComponent(0.55),
+        ])
+        let valueSize = value.safeSize()
+        value.safeDraw(at: NSPoint(x: bounds.width - 16 - valueSize.width, y: lineY))
+        let left = 16 + labelSize.width + 10
+        let chart = NSRect(x: left, y: lineY, width: bounds.width - 16 - valueSize.width - 10 - left,
+                           height: labelSize.height)
+        guard loadSamples.count > 1, chart.width > 8 else { return }
+        let low = loadSamples.min() ?? 0
+        let high = max(loadSamples.max() ?? 1, low + 0.05)
+        let path = NSBezierPath()
+        for (index, sample) in loadSamples.enumerated() {
+            let x = chart.minX + chart.width * CGFloat(index) / CGFloat(loadSamples.count - 1)
+            let y = chart.maxY - 1 - (chart.height - 2) * CGFloat((sample - low) / (high - low))
+            if index == 0 { path.move(to: NSPoint(x: x, y: y)) } else { path.line(to: NSPoint(x: x, y: y)) }
+        }
+        path.lineWidth = 1.2
+        path.lineJoinStyle = .round
+        signalColor.setStroke()
+        path.stroke()
     }
 
     /// Frame of the tab at `index` in this bar's coordinates.
@@ -468,6 +879,10 @@ final class RoundedTerminalTabBar: NSView {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        // Nothing can be drawn into less than a point or two, and the insets and
+        // midpoints below turn such bounds into invalid numbers: AppKit ends the app
+        // when a path is handed one (seen with a strip squeezed to nothing).
+        guard bounds.width >= 2, bounds.height >= 2 else { return }
         let s = settings
         if isPlaceholder { drawPlaceholderTitle(); return }
         // The titlebar already has the window background; the preview mimics that for Top.
@@ -482,6 +897,11 @@ final class RoundedTerminalTabBar: NSView {
             theme.foreground.withAlphaComponent(0.035).setFill()
             bounds.fill()
         }
+        if isSignalRail {
+            // No separator: the gutter beside a Signal sidebar carries the trace instead.
+            drawFooter()
+            return
+        }
         theme.foreground.withAlphaComponent(0.08).setFill()
         switch s.position {
         case .top: NSRect(x: 0, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
@@ -495,25 +915,88 @@ final class RoundedTerminalTabBar: NSView {
 
     /// Draws the focused tab's title centered on the window, like a plain titlebar.
     private func drawPlaceholderTitle() {
+        if settings.isSignal { drawSignalTitle(); return }
         guard let window, let title = displayedTabs.first(where: \.selected)?.title ?? model.hostWindow?.title,
               !title.isEmpty else { return }
         let text = NSAttributedString(string: title, attributes: [
-            .font: NSFont.titleBarFont(ofSize: NSFont.systemFontSize),
+            .font: SignalFont.titleBar(),
             .foregroundColor: theme.foreground.withAlphaComponent(window.isMainWindow ? 0.75 : 0.4),
         ])
-        let size = text.size()
+        let size = text.safeSize()
         let center = convert(NSPoint(x: window.frame.width / 2, y: 0), from: nil).x
         let width = min(size.width, max(0, bounds.width - 24))
         var x = (center - width / 2).rounded()
         x = min(max(x, 12), max(12, bounds.width - 12 - width))
         let rect = NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: width, height: size.height)
-        text.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        text.safeDraw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+
+    /// Signal titlebar: the selected tab as a capsule — its number on the tab's color,
+    /// its title, then its directory.
+    private func drawSignalTitle() {
+        guard let window else { return }
+        let selectedIndex = displayedTabs.firstIndex(where: \.selected)
+        let tab = selectedIndex.map { displayedTabs[$0] }
+        let title = tab?.displayTitle ?? SignalText.chromeSafe(model.hostWindow?.title ?? "")
+        guard !title.isEmpty else { return }
+        let active = window.isMainWindow
+        let fg = theme.foreground
+        let text = NSMutableAttributedString(string: title, attributes: [
+            .font: SignalFont.mono(12, .semibold),
+            .foregroundColor: fg.withAlphaComponent(active ? 0.92 : 0.45),
+        ])
+        if settings.showSubtitle, let subtitle = tab?.subtitle {
+            let regular = SignalFont.mono(12, .regular)
+            text.append(NSAttributedString(string: "  /  ", attributes: [
+                .font: regular, .foregroundColor: fg.withAlphaComponent(0.25),
+            ]))
+            text.append(NSAttributedString(string: subtitle, attributes: [
+                .font: regular, .foregroundColor: fg.withAlphaComponent(active ? 0.5 : 0.3),
+            ]))
+        }
+        let number = NSAttributedString(string: SignalText.ordinal(selectedIndex ?? 0), attributes: [
+            .font: SignalFont.mono(10, .bold),
+            .foregroundColor: theme.background,
+        ])
+        let tileWidth: CGFloat = 24
+        let height: CGFloat = 24
+        let textSize = text.safeSize()
+        // Keep clear of the titlebar buttons at the trailing end.
+        let reserved: CGFloat = showsActions ? 110 : 12
+        let available = max(0, bounds.width - 12 - reserved)
+        let width = min(5 + tileWidth + 9 + ceil(textSize.width) + 12, available)
+        guard width > tileWidth + 30 else { return }
+        let center = convert(NSPoint(x: window.frame.width / 2, y: 0), from: nil).x
+        var x = (center - width / 2).rounded()
+        x = min(max(x, 12), max(12, bounds.width - reserved - width))
+        let capsule = NSRect(x: x, y: ((bounds.height - height) / 2).rounded(), width: width, height: height)
+        let shape = NSBezierPath(roundedRect: capsule.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        fg.withAlphaComponent(0.03).setFill()
+        shape.fill()
+        fg.withAlphaComponent(0.08).setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+        let tile = NSRect(x: capsule.minX + 5, y: capsule.midY - 8, width: tileWidth, height: 16)
+        signalColor.withAlphaComponent(active ? 1 : 0.5).setFill()
+        NSBezierPath(roundedRect: tile, xRadius: 4, yRadius: 4).fill()
+        let numberSize = number.safeSize()
+        number.safeDraw(at: NSPoint(x: (tile.midX - numberSize.width / 2).rounded(),
+                                y: (tile.midY - numberSize.height / 2).rounded()))
+        let textRect = NSRect(x: tile.maxX + 9, y: (capsule.midY - textSize.height / 2).rounded(),
+                              width: max(0, capsule.maxX - 12 - tile.maxX - 9), height: textSize.height)
+        text.safeDraw(with: textRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         if isPlaceholder {
             // `point` is in the superview's coordinate space.
             guard !isHidden else { return nil }
+            if showsActions {
+                let local = convert(point, from: superview)
+                if let button = actionButtons.first(where: { !$0.isHidden && $0.frame.contains(local) }) {
+                    return button
+                }
+            }
             return frame.contains(point) ? self : nil
         }
         return super.hitTest(point)
@@ -563,6 +1046,12 @@ final class RoundedTerminalTabBar: NSView {
             let shuffle = NSMenuItem(title: "Shuffle Tab Colors", action: #selector(shuffleColors), keyEquivalent: "")
             shuffle.target = self
             menu.addItem(shuffle)
+        }
+        if isSignalRail {
+            let collapse = NSMenuItem(title: isRailCollapsed ? "Expand Sidebar" : "Collapse Sidebar",
+                                      action: #selector(toggleSidebar), keyEquivalent: "")
+            collapse.target = self
+            menu.addItem(collapse)
         }
         let settingsItem = NSMenuItem(title: "Tab Bar Settings…", action: #selector(openSettings), keyEquivalent: "")
         settingsItem.target = self
@@ -631,11 +1120,131 @@ private class HoverTabButton: TabMouseButton {
     override func mouseExited(with event: NSEvent) { isHovered = false }
 }
 
+/// The sliding highlight behind the selected session card in a Signal sidebar.
+private final class TabSelectionIndicator: NSView {
+    /// Room around the card for the glow, so this view's bounds do not clip it.
+    static let outset: CGFloat = 12
+
+    var color: NSColor = .controlAccentColor { didSet { if color != oldValue { needsDisplay = true } } }
+    var glow = true { didSet { if glow != oldValue { needsDisplay = true } } }
+    var radius: CGFloat = 10 { didSet { if radius != oldValue { needsDisplay = true } } }
+    /// Horizontal strips mark the selection with a bar along the bottom instead of the side.
+    var underline = false { didSet { if underline != oldValue { needsDisplay = true } } }
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        let card = bounds.insetBy(dx: Self.outset + 0.5, dy: Self.outset + 0.5)
+        guard card.width > 4, card.height > 4 else { return }
+        let radius = min(self.radius, card.height / 2)
+        let shape = NSBezierPath(roundedRect: card, xRadius: radius, yRadius: radius)
+        shape.lineWidth = 1
+        if glow {
+            NSGraphicsContext.saveGraphicsState()
+            let halo = NSShadow()
+            halo.shadowColor = color.withAlphaComponent(0.55)
+            halo.shadowBlurRadius = underline ? 6 : 10
+            halo.shadowOffset = .zero
+            halo.set()
+            color.withAlphaComponent(0.36).setStroke()
+            shape.stroke()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        NSGradient(starting: color.withAlphaComponent(0.22), ending: color.withAlphaComponent(0.05))?
+            .draw(in: shape, angle: 0)
+        color.withAlphaComponent(0.36).setStroke()
+        shape.stroke()
+        // The bright bar: on the leading edge of a card, under a chip.
+        let bar = underline
+            ? NSRect(x: card.minX + 10, y: card.maxY - 1.5, width: max(0, card.width - 20), height: 2)
+            : NSRect(x: card.minX - 0.5, y: card.minY + 11, width: 2, height: max(0, card.height - 22))
+        color.setFill()
+        NSBezierPath(roundedRect: bar, xRadius: 1, yRadius: 1).fill()
+    }
+}
+
+/// Collapses a Signal sidebar to its numbered tiles, and expands it again.
+private final class RailToggleButton: HoverTabButton {
+    var tint: NSColor = .labelColor { didSet { needsDisplay = true } }
+    var collapsed = false { didSet { if collapsed != oldValue { needsDisplay = true } } }
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        if isHovered {
+            tint.withAlphaComponent(0.07).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6).fill()
+        }
+        // A window outline with its sidebar: narrow when collapsed, wider when open.
+        let icon = NSRect(x: (bounds.midX - 6.5).rounded() + 0.5, y: (bounds.midY - 5.5).rounded() + 0.5,
+                          width: 13, height: 11)
+        let path = NSBezierPath()
+        path.appendRoundedRect(icon, xRadius: 2.5, yRadius: 2.5)
+        let divider = icon.minX + (collapsed ? 3 : 5)
+        path.move(to: NSPoint(x: divider, y: icon.minY))
+        path.line(to: NSPoint(x: divider, y: icon.maxY))
+        path.lineWidth = 1.3
+        tint.withAlphaComponent(isHovered ? 0.95 : 0.45).setStroke()
+        path.stroke()
+    }
+}
+
+/// Split and command palette buttons at the trailing end of a Signal titlebar.
+private final class TitlebarActionButton: HoverTabButton {
+    enum Kind {
+        case splitRight, splitDown, commands
+        var title: String {
+            switch self {
+            case .splitRight: "Split Right"
+            case .splitDown: "Split Down"
+            case .commands: "Command Palette"
+            }
+        }
+    }
+
+    var kind: Kind = .splitRight { didSet { needsDisplay = true } }
+    var tint: NSColor = .labelColor { didSet { needsDisplay = true } }
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        if isHovered {
+            tint.withAlphaComponent(0.07).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7).fill()
+        }
+        let icon = NSRect(x: (bounds.midX - 6.5).rounded() + 0.5, y: (bounds.midY - 5.5).rounded() + 0.5,
+                          width: 13, height: 11)
+        let path = NSBezierPath()
+        switch kind {
+        case .splitRight:
+            path.appendRoundedRect(icon, xRadius: 2.5, yRadius: 2.5)
+            path.move(to: NSPoint(x: icon.midX, y: icon.minY))
+            path.line(to: NSPoint(x: icon.midX, y: icon.maxY))
+        case .splitDown:
+            path.appendRoundedRect(icon, xRadius: 2.5, yRadius: 2.5)
+            path.move(to: NSPoint(x: icon.minX, y: icon.midY))
+            path.line(to: NSPoint(x: icon.maxX, y: icon.midY))
+        case .commands:
+            path.appendOval(in: NSRect(x: icon.minX + 0.5, y: icon.minY, width: 8.5, height: 8.5))
+            path.move(to: NSPoint(x: icon.minX + 8, y: icon.minY + 7.5))
+            path.line(to: NSPoint(x: icon.maxX, y: icon.maxY + 0.5))
+        }
+        path.lineWidth = 1.3
+        path.lineCapStyle = .round
+        tint.withAlphaComponent(isHovered ? 0.95 : 0.5).setStroke()
+        path.stroke()
+    }
+}
+
 /// The small round close control inside a capsule.
 private final class TabCloseButton: HoverTabButton {
     var tint: NSColor = .labelColor { didSet { needsDisplay = true } }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
         let circle = bounds.insetBy(dx: 0.5, dy: 0.5)
         if isHovered {
             tint.withAlphaComponent(0.18).setFill()
@@ -658,9 +1267,49 @@ private final class TabAddButton: HoverTabButton {
     var theme = RoundedTabTheme.fallback { didSet { needsDisplay = true } }
     var settings = TabBarSettings() { didSet { needsDisplay = true } }
     var isRow = false { didSet { needsDisplay = true } }
+    /// Set in Signal sidebars: the row reads "New session" and lights up in this color.
+    var signalColor: NSColor? { didSet { needsDisplay = true } }
+    /// A collapsed sidebar shows only the plus.
+    var compact = false { didSet { if compact != oldValue { needsDisplay = true } } }
     override var isFlipped: Bool { true }
 
+    private func drawSignalRow(_ signal: NSColor) {
+        let fg = theme.foreground
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let shape = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
+        let ink = fg.withAlphaComponent(isHovered ? 0.9 : 0.5)
+        shape.lineWidth = 1
+        if isHovered {
+            signal.withAlphaComponent(0.07).setFill()
+            shape.fill()
+            signal.withAlphaComponent(0.6).setStroke()
+        } else {
+            shape.setLineDash([3, 3], count: 2, phase: 0)
+            fg.withAlphaComponent(0.14).setStroke()
+        }
+        shape.stroke()
+        if compact {
+            drawPlus(at: NSPoint(x: rect.midX, y: rect.midY), color: isHovered ? signal : ink)
+            return
+        }
+        drawPlus(at: NSPoint(x: rect.minX + 26, y: rect.midY), color: isHovered ? signal : ink)
+        let text = NSAttributedString(string: "New session", attributes: [
+            .font: SignalFont.mono(12, .medium), .foregroundColor: ink,
+        ])
+        let size = text.safeSize()
+        text.safeDraw(at: NSPoint(x: rect.minX + 50, y: (rect.midY - size.height / 2).rounded()))
+        guard settings.showShortcutHints else { return }
+        let hint = NSAttributedString(string: "⌘T", attributes: [
+            .font: SignalFont.system(10, .medium), .foregroundColor: fg.withAlphaComponent(0.3),
+        ])
+        let hintSize = hint.safeSize()
+        guard rect.maxX - 12 - hintSize.width > rect.minX + 50 + size.width + 8 else { return }
+        hint.safeDraw(at: NSPoint(x: rect.maxX - 12 - hintSize.width, y: (rect.midY - hintSize.height / 2).rounded()))
+    }
+
     override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        if isRow, let signalColor { drawSignalRow(signalColor); return }
         let fg = theme.foreground
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
         let radius = min(settings.cornerRadius(height: rect.height), rect.height / 2)
@@ -674,10 +1323,10 @@ private final class TabAddButton: HoverTabButton {
             shape.stroke()
             drawPlus(at: NSPoint(x: rect.minX + 16, y: rect.midY), color: ink)
             let text = NSAttributedString(string: "New tab", attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: ink,
+                .font: SignalFont.system(12, .medium), .foregroundColor: ink,
             ])
-            let size = text.size()
-            text.draw(at: NSPoint(x: rect.minX + 30, y: rect.midY - size.height / 2))
+            let size = text.safeSize()
+            text.safeDraw(at: NSPoint(x: rect.minX + 30, y: rect.midY - size.height / 2))
         } else {
             fg.withAlphaComponent(isHovered ? 0.11 : 0.05).setFill()
             shape.fill()
@@ -719,12 +1368,33 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
     /// view's animator proxy so selection and hover fade instead of snapping.
     @objc dynamic var selectAmount: CGFloat = 0 { didSet { needsDisplay = true } }
     @objc dynamic var hoverAmount: CGFloat = 0 { didSet { needsDisplay = true } }
+    /// 0 while a freshly opened tab animates in, 1 at rest.
+    @objc dynamic var appearAmount: CGFloat = 1 { didSet { needsDisplay = true } }
+    private let appearMotion = SignalMotion()
 
     override static func defaultAnimation(forKey key: NSAnimatablePropertyKey) -> Any? {
         switch key {
-        case "selectAmount", "hoverAmount": CABasicAnimation()
+        case "selectAmount", "hoverAmount", "appearAmount": CABasicAnimation()
         default: super.defaultAnimation(forKey: key)
         }
+    }
+
+    private var isSignalCard: Bool { owner?.isSignalRail == true }
+    private var isSignalChip: Bool { owner?.isSignalStrip == true }
+    private var isCollapsed: Bool { owner?.isRailCollapsed == true }
+
+    private static var chipFont: NSFont { SignalFont.mono(12, .semibold) }
+
+    /// Side of the numbered tile in a Signal chip of the given height.
+    private static func chipTile(height: CGFloat) -> CGFloat { max(14, height - 10) }
+
+    /// Width a Signal chip needs: tile, title and close control.
+    private static func chipWidth(_ tab: RoundedTerminalTabModel.Tab, height: CGFloat,
+                                  settings: TabBarSettings) -> CGFloat {
+        var width = 5 + chipTile(height: height) + 4 + 8
+        width += ceil(NSAttributedString(string: tab.displayTitle, attributes: [.font: chipFont]).safeSize().width)
+        width += settings.closeButton != .never ? 5 + closeSize + 8 : 10
+        return min(max(width.rounded(.up), minWidth), 220)
     }
 
     private var theme: RoundedTabTheme { owner?.theme ?? .fallback }
@@ -776,18 +1446,14 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
     /// The tab's color: picked by hand first, else its random palette color.
     private var tabColor: NSColor? {
         guard let tab else { return nil }
-        if let color = tab.color.displayColor { return color }
-        guard settings.tabColors == .random, let slot = tab.autoColor else { return nil }
-        let indices = TabBarSettings.randomPaletteIndices
-        let index = indices[slot % indices.count]
-        return theme.palette.indices.contains(index) ? theme.palette[index] : nil
+        return theme.color(picked: tab.color, slot: tab.autoColor, settings: settings)
     }
 
     private static func fonts(height: CGFloat) -> (title: NSFont, selected: NSFont, number: NSFont) {
         let size: CGFloat = height >= 32 ? 13 : 12
-        return (.systemFont(ofSize: size, weight: .medium),
-                .systemFont(ofSize: size, weight: .semibold),
-                .monospacedDigitSystemFont(ofSize: size - 1.5, weight: .semibold))
+        return (SignalFont.system(size, .medium),
+                SignalFont.system(size, .semibold),
+                SignalFont.digits(size - 1.5, .semibold))
     }
 
     private static func paddings(height: CGFloat, settings: TabBarSettings) -> (left: CGFloat, right: CGFloat) {
@@ -796,12 +1462,13 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
     }
 
     private static func numberWidth(_ index: Int, font: NSFont) -> CGFloat {
-        ceil(NSAttributedString(string: "\(index + 1)", attributes: [.font: font]).size().width)
+        ceil(NSAttributedString(string: "\(index + 1)", attributes: [.font: font]).safeSize().width)
     }
 
     /// Width a capsule needs to show its whole title (clamped), used by "Fit title".
     static func fittedWidth(_ tab: RoundedTerminalTabModel.Tab, index: Int, height: CGFloat,
                             settings: TabBarSettings) -> CGFloat {
+        if settings.isSignal { return chipWidth(tab, height: height, settings: settings) }
         let fonts = fonts(height: height)
         let pad = paddings(height: height, settings: settings)
         let colored = hasColor(tab, settings: settings)
@@ -813,7 +1480,7 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
             if colored && (settings.colorStyle == .dot || settings.colorStyle == .both) { width += dotSize + 6 }
             if settings.showNumbers { width += numberWidth(index, font: fonts.number) + 6 }
         }
-        width += ceil(NSAttributedString(string: tab.title, attributes: [.font: fonts.selected]).size().width)
+        width += ceil(NSAttributedString(string: tab.title, attributes: [.font: fonts.selected]).safeSize().width)
         if settings.closeButton != .never { width += 6 + closeSize }
         return min(max(width.rounded(.up), minWidth), maxWidth)
     }
@@ -825,6 +1492,16 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
         let midY = bounds.midY
         var x = pad.left
         var m = Metrics(title: .zero)
+        if isSignalCard || isSignalChip {
+            // Signal tabs draw their own content; only the close control needs a frame.
+            // A collapsed sidebar has no room for it (the tab menu still closes tabs).
+            if s.closeButton != .never, !isCollapsed {
+                let inset: CGFloat = isSignalChip ? 8 : 10
+                m.close = NSRect(x: bounds.width - inset - Self.closeSize, y: (midY - Self.closeSize / 2).rounded(),
+                                 width: Self.closeSize, height: Self.closeSize)
+            }
+            return m
+        }
         let colored = tab.map { Self.hasColor($0, settings: s) } ?? false
         if colored && s.colorStyle == .cap {
             // The number lives in a colored cap on the capsule's leading end.
@@ -855,9 +1532,14 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
 
     // MARK: State
 
-    func update(_ tab: RoundedTerminalTabModel.Tab, index: Int, count: Int) {
+    func update(_ tab: RoundedTerminalTabModel.Tab, index: Int, count: Int, entering: Bool = false) {
         let wasSelected = self.tab?.selected
         self.tab = tab; self.index = index; self.count = count
+        if entering, settings.isSignal, settings.animations, !RoundedTerminalTabBar.reduceMotion {
+            appearMotion.run(duration: 0.55, delay: RoundedTerminalTabBar.settleDelay(for: window)) { [weak self] progress in
+                self?.appearAmount = progress
+            }
+        }
         selectButton.setAccessibilityLabel("Tab \(index + 1): \(tab.title)")
         selectButton.setAccessibilityValue(tab.selected ? 1 : 0)
         closeButton.setAccessibilityLabel("Close \(tab.title)")
@@ -880,15 +1562,16 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
 
     private func updateCloseVisibility() {
         switch settings.closeButton {
+        case _ where isCollapsed: closeButton.isHidden = true
         case .never: closeButton.isHidden = true
         case .always: closeButton.isHidden = false
-        case .hover: closeButton.isHidden = !(tab?.selected == true || hovered)
+        case .hover: closeButton.isHidden = isSignalCard ? !hovered : !(tab?.selected == true || hovered)
         }
     }
 
-    private func animate(_ change: @escaping (RoundedTabCell) -> Void) {
+    private func animate(duration: TimeInterval = 0.18, _ change: @escaping (RoundedTabCell) -> Void) {
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
+            context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             change(self.animator())
         }
@@ -960,8 +1643,170 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
                        blue: lerp(a.blueComponent, b.blueComponent), alpha: lerp(a.alphaComponent, b.alphaComponent))
     }
 
+    /// Characters still "decoding" while a new tab's title settles.
+    private static func scrambled(_ string: String, progress: CGFloat) -> String {
+        let glyphs = Array("/\\_=+<>#%01X")
+        let characters = Array(string)
+        let shown = Int(CGFloat(characters.count) * min(max(progress * 1.4, 0), 1))
+        var result = ""
+        for (index, character) in characters.enumerated() {
+            if index < shown || character == " " {
+                result.append(character)
+            } else {
+                result.append(glyphs.randomElement() ?? character)
+            }
+        }
+        return result
+    }
+
+    /// A Signal session card: index tile, title and directory. The selection highlight is
+    /// the bar's sliding indicator, drawn behind this cell.
+    private func drawSignalCard(_ tab: RoundedTerminalTabModel.Tab) {
+        let theme = theme
+        let s = settings
+        let sel = selectAmount
+        let fg = theme.foreground
+        let tint = tabColor ?? theme.accent(s.accent)
+        let appear = min(max(appearAmount, 0), 1)
+        let context = NSGraphicsContext.current?.cgContext
+        context?.saveGState()
+        defer { context?.restoreGState() }
+        context?.setAlpha(appear)
+
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let shape = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
+        let wash = hoverAmount * (1 - sel)
+        if wash > 0.01 {
+            fg.withAlphaComponent(0.04 * wash).setFill()
+            shape.fill()
+        }
+        if appear < 1 {
+            // A band of the tab's color sweeps across a card as it arrives.
+            NSGraphicsContext.saveGraphicsState()
+            shape.addClip()
+            let band = NSRect(x: rect.minX - rect.width + rect.width * 2 * appear, y: rect.minY,
+                              width: rect.width, height: rect.height)
+            NSGradient(colors: [
+                tint.withAlphaComponent(0), tint.withAlphaComponent(0.5 * (1 - appear)), tint.withAlphaComponent(0),
+            ])?.draw(in: band, angle: 0)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
+        // Index tile: tinted at rest, solid and glowing when selected.
+        let tileSize: CGFloat = 27
+        let collapsed = isCollapsed
+        let tile = NSRect(x: collapsed ? ((bounds.width - tileSize) / 2).rounded() : 13,
+                          y: ((bounds.height - tileSize) / 2).rounded(), width: tileSize, height: tileSize)
+        let tilePath = NSBezierPath(roundedRect: tile.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        NSGraphicsContext.saveGraphicsState()
+        if sel > 0.01 {
+            let glow = NSShadow()
+            glow.shadowColor = tint.withAlphaComponent(0.6 * sel)
+            glow.shadowBlurRadius = 9
+            glow.shadowOffset = .zero
+            glow.set()
+        }
+        Self.mix(tint.withAlphaComponent(0.11), tint, sel).setFill()
+        tilePath.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        Self.mix(tint.withAlphaComponent(0.28), tint, sel).setStroke()
+        tilePath.lineWidth = 1
+        tilePath.stroke()
+        if s.showNumbers {
+            drawText(SignalText.ordinal(index), in: tile, font: SignalFont.mono(11, .bold),
+                     color: Self.mix(tint, theme.background, sel), centered: true)
+        }
+
+        // A collapsed sidebar shows the tile alone; the tooltip carries the title.
+        if collapsed { return }
+
+        // Trailing edge: the close control on hover, else the shortcut hint.
+        let left = tile.maxX + 10
+        var right = bounds.width - 8
+        if !closeButton.isHidden {
+            right = closeButton.frame.minX - 6
+        } else if s.showShortcutHints, index < 9 {
+            let hint = NSAttributedString(string: "⌘\(index + 1)", attributes: [
+                .font: SignalFont.system(10, .medium),
+                .foregroundColor: fg.withAlphaComponent(0.3),
+            ])
+            let size = hint.safeSize()
+            hint.safeDraw(at: NSPoint(x: right - size.width - 2, y: (bounds.midY - size.height / 2).rounded()))
+            right -= size.width + 8
+        }
+
+        let width = max(0, right - left)
+        let titleFont = SignalFont.mono(12.5, .semibold)
+        let titleColor = Self.mix(fg.withAlphaComponent(0.58 + 0.2 * hoverAmount), fg, sel)
+        let title = appear < 1 ? Self.scrambled(tab.displayTitle, progress: appear) : tab.displayTitle
+        guard s.showSubtitle, let subtitle = tab.subtitle else {
+            drawText(title, in: NSRect(x: left, y: 0, width: width, height: bounds.height),
+                     font: titleFont, color: titleColor)
+            return
+        }
+        drawText(title, in: NSRect(x: left, y: bounds.midY - 17, width: width, height: 17),
+                 font: titleFont, color: titleColor)
+        // Status dot: filled in the tab's color for the selected tab, hollow otherwise.
+        let dot = NSBezierPath(ovalIn: NSRect(x: left + 0.5, y: bounds.midY + 6.5, width: 6, height: 6))
+        if sel > 0.5 {
+            tint.setFill()
+            dot.fill()
+        } else {
+            dot.lineWidth = 1
+            fg.withAlphaComponent(0.32).setStroke()
+            dot.stroke()
+        }
+        drawText(subtitle, in: NSRect(x: left + 12, y: bounds.midY + 1, width: max(0, width - 12), height: 17),
+                 font: SignalFont.mono(10.5, .regular), color: fg.withAlphaComponent(0.38))
+    }
+
+    /// A Signal chip for top and bottom strips: numbered tile and title. The selection
+    /// highlight is the bar's sliding indicator, drawn behind this cell.
+    private func drawSignalChip(_ tab: RoundedTerminalTabModel.Tab) {
+        let theme = theme
+        let s = settings
+        let sel = selectAmount
+        let fg = theme.foreground
+        let tint = tabColor ?? theme.accent(s.accent)
+        let appear = min(max(appearAmount, 0), 1)
+        let context = NSGraphicsContext.current?.cgContext
+        context?.saveGState()
+        defer { context?.restoreGState() }
+        context?.setAlpha(appear)
+
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let radius = min(8, rect.height / 2)
+        let wash = hoverAmount * (1 - sel)
+        if wash > 0.01 {
+            fg.withAlphaComponent(0.05 * wash).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+        }
+
+        let side = Self.chipTile(height: bounds.height)
+        let tile = NSRect(x: 5, y: ((bounds.height - side) / 2).rounded(), width: side + 4, height: side)
+        let tilePath = NSBezierPath(roundedRect: tile.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
+        Self.mix(tint.withAlphaComponent(0.11), tint, sel).setFill()
+        tilePath.fill()
+        Self.mix(tint.withAlphaComponent(0.28), tint, sel).setStroke()
+        tilePath.lineWidth = 1
+        tilePath.stroke()
+        if s.showNumbers {
+            drawText(SignalText.ordinal(index), in: tile, font: SignalFont.mono(10, .bold),
+                     color: Self.mix(tint, theme.background, sel), centered: true)
+        }
+
+        let left = tile.maxX + 8
+        let right = closeButton.isHidden ? bounds.width - 10 : closeButton.frame.minX - 5
+        let title = appear < 1 ? Self.scrambled(tab.displayTitle, progress: appear) : tab.displayTitle
+        drawText(title, in: NSRect(x: left, y: 0, width: max(0, right - left), height: bounds.height),
+                 font: Self.chipFont, color: Self.mix(fg.withAlphaComponent(0.58 + 0.2 * hoverAmount), fg, sel))
+    }
+
     override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
         guard let tab else { return }
+        if isSignalCard { drawSignalCard(tab); return }
+        if isSignalChip { drawSignalChip(tab); return }
         let theme = theme
         let s = settings
         let sel = selectAmount
@@ -1017,15 +1862,14 @@ private final class RoundedTabCell: NSView, NSDraggingSource {
     }
 
     private func drawText(_ string: String, in rect: NSRect, font: NSFont, color: NSColor, centered: Bool = false) {
-        let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byTruncatingTail
-        style.alignment = centered ? .center : .natural
+        guard !string.isEmpty, rect.width >= 1, rect.height >= 1 else { return }
         let text = NSAttributedString(string: string, attributes: [
-            .font: font, .foregroundColor: color, .paragraphStyle: style,
+            .font: font, .foregroundColor: color,
+            .paragraphStyle: centered ? SignalText.truncatingCentered : SignalText.truncating,
         ])
         let height = ceil(font.ascender - font.descender + font.leading)
         let line = NSRect(x: rect.minX, y: (rect.midY - height / 2).rounded(), width: rect.width, height: height)
-        text.draw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        text.safeDraw(with: line, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     // MARK: Mouse

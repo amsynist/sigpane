@@ -55,6 +55,12 @@ class TerminalWindow: NSWindow {
     /// the tab first appears so every strip in the tab group shows the same color.
     var autoTabColorSlot: Int?
 
+    /// Ghostty X: the custom tab strip in this window's titlebar, when it has one.
+    var titlebarTabStrip: RoundedTerminalTabBar? { nil }
+
+    /// Ghostty X: when this tab's window was created, so a fresh tab can animate in.
+    let bornAt = ProcessInfo.processInfo.systemUptime
+
     /// Whether this window supports the update accessory. If this is false, then views within this
     /// window should determine how to show update notifications.
     var supportsUpdateAccessory: Bool {
@@ -77,6 +83,8 @@ class TerminalWindow: NSWindow {
             guard tabColor != oldValue else { return }
             tabColorIndicator.rootView = TabColorIndicatorView(tabColor: tabColor)
             invalidateRestorableState()
+            // Ghostty X: tab strips and the Signal chrome are tinted by this color.
+            NotificationCenter.default.post(name: .ghosttyXTabColorsDidShuffle, object: self)
         }
     }
 

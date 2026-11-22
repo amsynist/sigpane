@@ -58,3 +58,213 @@ Root cause of tabs not switching on physical clicks: whenever the selected tab c
 ## Theme-matched tab gradients
 
 Tabs take their colors from the active Ghostty config (palette 4 → 5 accent gradient, `foreground` for text; Tokyo Night fallback) and update on config reload. The selected tab is a rounded pill with a blue→magenta wash, gradient hairline border, top sheen and gradient underline; hover adds a neutral wash. Selection and hover fade over 0.18s via animatable `selectAmount`/`hoverAmount`. User tab colors keep their own underline. Previewed offscreen with the real component before install.
+
+## Signal interface
+
+The Signal design restyles the custom chrome after `docs/previews/signal-interface.html`. It is the default look (`TabBarSettings.design`); choose Classic in the Tab Bar settings to get the capsule strip back. Every part has its own switch in the settings window.
+
+- Sidebar (tab bar on the left or right): 54-point session cards with a numbered tile in the tab's color, the title, and the focused pane's directory. A highlight with a slight overshoot slides between cards on selection (`TabSelectionIndicator`). A tab opened in the last 1.2 seconds fades in with a color sweep while its title "decodes". The dashed row reads "New session", and the foot of the bar shows the 1-minute load average as a sparkline.
+- Tint: the selection, focus outline, trace, status line and titlebar capsule take the selected tab's color (`RoundedTabTheme.signal(for:settings:)`), or the accent when "Tint follows the selected tab" is off.
+- Panes: every pane is framed, a lone or zoomed one included, with an 8-point gap and 10-point corners (both adjustable). Each has a 24-point header with its letter, title, directory and size in cells, plus split and close buttons on hover. The focused pane gets a tinted outline, a soft glow, corner brackets and a sweep when it takes focus. Hovering a split divider lights a small handle.
+- Trace: with the bar on the left, `SignalTraceView` draws a line from the selected card along the gutter to the focused pane, masked by the panes so it only shows in the gaps, with a pulse travelling along it.
+- Status line: a 24-point strip under the terminal with the focused pane's title, which pane has focus, its size and the time.
+- Titlebar (tabs not at the top, two or more tabs): the title becomes a capsule with the tab's number, title and directory, and three buttons at the trailing end split right, split down and open the command palette.
+
+### Second pass
+
+- Every position: top and bottom strips draw Signal chips (numbered tile and title) with the same sliding highlight, marked by a bar under the selected chip. The trace runs from the selected tab to the focused pane for left, right, top and bottom.
+- Selection animation: each tab is its own window with its own strip, so strips share the latest selection change per tab group (`selectionHistory`). The strip that comes forward starts its highlight at the previously selected tab and slides to the new one, and the terminal fades and slides in (`playTabTransition`).
+- Collapsible sidebar: the button in the sidebar header (or the bar's context menu) shrinks a Signal sidebar to its 58-point column of numbered tiles. The change slides when animations are on.
+- Commands: `ghostty_surface_read_command` (new, in `src/apprt/embedded.zig` and `include/ghostty.h`) reads a command's output or command line through shell integration's prompt marks. The pane header uses it for "copy the last command's output" and for a Recent commands list: each command folded to one line with its line count and first line, unfoldable, with a copy button per command. The core library must be rebuilt for this.
+- Cost: tabs that are not on screen stop their clock and load timers and their trace animation, and skip the per-update sync. Timers carry tolerance. The pane header subscribes to the title, directory and size instead of observing the whole surface, which publishes on every pointer move. The command list keeps only previews and reads full text on demand.
+
+Not part of this change: prompt chips and transient prompts belong to the shell prompt. Folding output in place, inside the scrolling terminal grid, needs row hiding in the core renderer; the Recent commands list is the folded view for now. `docs/signal/` has a matching color theme and config lines to copy into the Ghostty config by hand.
+
+Validation: the first pass compiled and linked in a `ReleaseLocal` build on 2026-11-20. The second pass was written without a macOS toolchain: the Swift passes a syntax parse and the Zig passes `zig ast-check` and `zig fmt --check` with Zig 0.17.0, but neither has been compiled. Nothing here has been linted, and the native test suite has not been run against it.
+
+### Command blocks, folding and the Signal prompt
+
+Every command and its output is one block. The app draws a box around each block in view, with
+a copy button and a fold chevron on the command line. Copy takes the output whether it is
+showing or folded (or the command itself when it printed nothing).
+
+- **Where the blocks come from.** Shell integration (OSC 133) marks prompt rows, so
+  `src/terminal/fold.zig` can say which rows each command covers. `ghostty_surface_blocks`
+  returns the blocks in view; it reads only the rows in view. `SignalBlockView`
+  (`TerminalSplitTreeView.swift`) draws over them. It sits beside the surface view and only its
+  buttons take clicks. It asks 60 times a second while the terminal is changing, 4 times a second
+  once it has been still for 1.2 s, and not at all while its window is off screen.
+- **Folding.** Folding removes the output rows from the screen (`PageList.eraseRowsAt`) and keeps
+  their text, with colors, in a ring of the 48 most recent folds. The command line gets a label
+  ("42 lines" and the first line of output) that carries the fold's id as an OSC 8 link, so
+  nothing depends on remembered positions. The chevron, or a click on the label, folds and opens
+  a block. A block whose command line has scrolled off the top can be folded from the rows still
+  in view; its command line comes back down.
+- **Nothing folds by itself unless you ask.** Out of the box, output stays on the screen until
+  you fold it. "Fold long output for me" (off by default) folds the previous command's output
+  when the next command starts, if it was longer than "Fold after lines" (default 20). "Fold the
+  newest output too" folds as soon as a command finishes. The output of a command that failed is
+  never folded for you. The settings have new names (`autoFold`, `autoFoldLines`), so the earlier
+  always-on default of 8 lines is not picked up from saved settings.
+- **What stays still.** Two rules decide what a fold may move (`Anchor` in `fold.zig`). A fold
+  made with the pointer keeps the command line that was clicked where it is: what is under it
+  moves up, the freed rows are left blank at the bottom, and a second click in the same place
+  undoes the first. (If that command line is up in the scrollback there is nothing in view to
+  hold still, so the space is filled from the scrollback and the command line arrives with it.)
+  A fold made for you keeps the cursor where it is: the rows from the fold down
+  do not move, and the space is filled from above by lines coming back out of the scrollback. If
+  the scrollback holds fewer lines than the fold would free, that output is left open.
+- **Opening.** Blank rows at the bottom of the screen are used first; for the rest, rows above
+  scroll into the scrollback and the view stays on the command line, so it does not move and the
+  output unrolls under it. The prompt may then be below the view; typing brings it back.
+- **Peek.** Rows can be put back on the screen itself but not into the scrollback. A fold whose
+  command line has scrolled up there opens as a panel over the pane instead (`SignalPeekView`):
+  the kept text, plain, set at the terminal's columns and line height, scrollable. The chevron
+  again, any key, a click elsewhere or scrolling the terminal puts it away. Escape closes it
+  without reaching the shell. Text over 2,000 lines is cut in the panel; copy takes all of it.
+- **Showing the change.** For under half a second after a fold or an opening the block shows
+  which way it went: an opened block has a bright line run down from its command line, with the
+  rows it has not reached yet dimmed; a folded one glows and settles. Not with Reduce Motion.
+- **Copy from a fold.** Kept text holds the blanks between words as cursor steps, not spaces.
+  Plain text made from it (copy, the label's preview, the peek) turns each step back into
+  spaces; before, the words of a column listing ran together.
+- **Limits.** Blocks are only rewritten while the shell is at a prompt, on the primary screen.
+  A fold pushed out of the ring of 48 keeps its label but has no button. Output over 20,000 rows
+  is never folded. Colors come back when a fold is opened in place, not in the peek or a copy.
+- **Prompt.** With "Signal prompt (zsh)" on, the app sets `GHOSTTY_X_PROMPT=1` and the zsh
+  integration draws the prompt itself (directory and branch chips, caret, Python environment on
+  the right) with zsh builtins only, taking over from Starship inside Ghostty X. When a line is
+  accepted its prompt shrinks to a blank spacer row and the caret, which is what gives each
+  block its own box.
+- **Command deck.** The prompt being typed at is a card of its own, drawn by the same overlay:
+  in the focused pane it has the window's color on its edge, a wash that fades to the right, a
+  bright bar down its left side, and "CMD" and "RUN" labels set into its top edge. In other
+  panes it is a plain outline. The shell prints only the prompt's text. Its graphics (the chip
+  outlines and icons, the arrow pointer, and the caret that starts each finished command) are
+  drawn by the overlay over cells the prompt marks with blank one-cell characters (U+2002,
+  U+2003, U+2005, U+2006, U+2008, U+2009; see `fold.marks`), so they are vector shapes that
+  match the design rather than font glyphs. The cursor is a thin blinking bar with nothing
+  drawn around it. The prompt never turns red: a failure is shown on the command that failed (next point).
+- **Failed commands.** A command that exits non-zero is marked on its own block: red caret, a
+  red edge down the left, a red outline and a "FAILED" tag by the buttons. When the command
+  finishes (OSC 133;D with a non-zero code) the core changes the blank pointer cell at the start
+  of its command line from U+2002 to U+2003 (`markFailed` in `fold.zig`), so the mark is part of
+  the row and stays with it through scrolling and folding. Before, the failure was shown on the
+  prompt after it (red pointer, "FAILED" on HUD Brackets, "EXIT n" on Tabbed Dock), which read as
+  if the prompt being typed at had failed. The exit code itself is no longer shown. The caret of
+  a command typed over several rows is now drawn on its first row.
+- **Keys.** Control-F folds every block with two or more rows of output, or opens every fold on
+  the screen when there is nothing left to fold (`toggleAll` in `fold.zig`); the cursor stays put
+  as far as the scrollback can fill the space. Control-S shrinks the sidebar to its tiles and
+  brings it back. Both are keys terminal programs use, so they are only taken from the terminal
+  while the shell has the plain screen (Control-F only at a prompt): in vim, less or an editor
+  the key goes to the program as always. At a zsh prompt this does replace Control-F's
+  forward-char and Control-S's forward search. Each can be turned off in Settings ▸ Tab Bar ▸
+  Terminal. One app-wide key monitor (`SignalShortcuts`), no timers.
+- **Picking a block from the keyboard.** At a prompt, Shift with the up and down arrows moves
+  from one finished command to the next (the first press picks the newest); the picked block is
+  outlined in the window's color and tagged "CTRL+C COPIES". Control-C, or Command-C, copies its
+  output (its command if it printed nothing) and lets go of it. Escape or any other key lets go
+  of it too, and with nothing picked Control-C is the usual interrupt. Past the top or bottom of
+  the view it scrolls a prompt at a time (`jump_to_prompt`). A copy, by key or by the button,
+  shows "COPIED TO CLIPBOARD" on that block for 1.6 s. A block is remembered by the screen row of
+  its command line (`view_top` in the block geometry), which does not change as the view scrolls.
+  Not taken while a program is running. Settings ▸ Tab Bar ▸ Terminal turns it off.
+- **Key hints in the status line.** The free middle of the status line shows the keys worth
+  remembering, each as a small key cap and a word: new tab, split, pick block, fold all, sidebar,
+  next pane, zoom pane, clear, close. The app's own keys are listed when they are turned on; the
+  terminal's are read from the loaded configuration (`keyboardShortcut(for:)`), so a rebound key
+  shows as bound and an action with no key is left out. As many are drawn as fit, most useful
+  first, and a long title gives up part of its room for them. The list is worked out once and
+  kept until a setting or the configuration changes (`SignalHints`). "Key hints in the status
+  line" in Settings ▸ Tab Bar turns it off.
+- **Tabbed Dock spacing.** The dock is the typed row with the same margin above and below, so
+  the text sits in its middle (it had 4 points above and 6 below). The directory tab has matching
+  room before its icon and after its text, and the gap between the arrow tile and the text is
+  about the tile's own margin (one cell less than before).
+- **Room above the prompt.** Every prompt, the first of a session included, starts with a blank
+  row. Before, the first had none, and the prompt's frame and label were drawn over whatever had
+  been printed just before it (a direnv or login message).
+- **Prompt styles.** Settings ▸ Tab Bar ▸ Terminal ▸ Prompt style picks the look of the prompt
+  being typed at: Breadcrumb Rail (default), Command Capsule, Tabbed Dock, HUD Brackets, or the
+  Card above. The app writes the choice to `prompt-style` in its cache folder; the zsh integration
+  reads it before every prompt (`GHOSTTY_X_STYLE_FILE`), so open shells switch at their next
+  prompt. Each look lays its text out differently and starts with a mark naming the look
+  (U+2000, U+2001, U+2004, U+2007), and the overlay draws the look the marks name, so a shell
+  that has not reached its next prompt is still drawn correctly. A demo run uses `demo-` copies
+  of these cache files and never changes what the real app reads.
+- **Motion.** Signal animations are stepped by `SignalMotion` (a 60 Hz timer that exists only
+  while a motion runs) and move real geometry, not implicit layer animations. Each tab is its own
+  window, so a motion plays only in the window being looked at (`NSWindow.isFrontTab`); a strip
+  that is behind leaves the change unplayed and plays it when it comes forward. Before this, the
+  strips played and used up their animations while still off screen, which is why switching and
+  new tabs looked instant. The sidebar slide gives the terminal its new width once and then
+  glides it, so the terminal is not resized every frame. A tab coming forward gets a sweep line
+  drawn over the terminal; nothing underneath moves or fades, so a translucent window never shows
+  through more. Motion in a window made under 0.7 s ago waits 0.24 s for it to settle.
+- **Window opacity and blur.** The Signal Void overlay no longer sets `background-opacity`; your
+  config's opacity and blur apply. The command deck's label gaps are cut out of its edge rather
+  than painted, so they stay see-through too.
+- **Colors and settings.** Settings ▸ Tab Bar ▸ Terminal has: Signal Void colors, Signal prompt,
+  Prompt style, Command blocks, Fold long output for me, and with that on, Fold after lines and
+  Fold the newest output too. Colors and the prompt are applied
+  through a config overlay in `~/Library/Caches/com.amsynist.ghosttyx/`; the user's config file is
+  never edited.
+- **Drawing into nothing.** Closing a tab and switching at once could end the app: the strip is
+  squeezed to zero width for a frame, `bounds.insetBy` then returns the null rectangle, its
+  midpoint is not a number, and `NSBezierPath.line(to:)` raises, which AppKit turns into a crash
+  (`+[NSApplication _crashOnException:]`; found from the crash record and the system log, 4 demo
+  runs of 4 failed). Every `draw(_:)` in the Ghostty X chrome now returns when its bounds are
+  under two points, the sliding highlight is never given a negative size, and it is not placed
+  behind a tab that has no frame yet.
+- **Memory and idle cost.** A demo run now opens, switches and closes tabs in three rounds and
+  writes the app's memory after each: it levels off (for example 566, 552, 474 MB right after
+  each round, 278 MB once idle, against 281 MB at the start; the numbers include the demo's own
+  full-window pictures). The system leak checker (`leaks`) on the same run reports under 5 KB,
+  all in system XPC objects. Two things were tightened: overlays are kept in a plain list and
+  dropped when their pane closes, with one shared event monitor instead of one per pane, and the
+  text kept for folds is capped at 16 MB in all (oldest folds go first). Left alone with three
+  panes the app uses about 1.7% of one core, about 0.5% of it for the command blocks.
+- **Prompt looks against their designs.** Each look is photographed in the state the design was
+  drawn in (a branch, a Python environment, a command typed) and set beside it; spacing was
+  corrected from that: the rail's environment ends in the last column and its branch and text sit
+  closer, the capsule's badge and key cap stand at its two ends, the dock's "READY" is small and
+  drawn by the app, and the brackets' tags and hints keep the design's gaps. What the cell grid
+  does not allow: text in one size only (the designs use smaller labels), and the capsule's
+  two-line name and version, which is one line here.
+- **One script for all of it.** `.local/ghostty-x-install.sh` builds the core library and the
+  app, signs it with the local helper, checks a staged copy, swaps it in for
+  `/Applications/Ghostty.app` (the old one goes to `~/.config/zera-terminal-backups/`, and is put
+  back if anything fails) and opens it. `--no-core`, `--no-build`, `--no-open` and `--close-old`
+  change what it does; `--help` lists them. Run end to end once: 8 seconds with nothing to
+  rebuild.
+- **Installed.** The native tests pass (455, Debug configuration: the test target needs
+  testability, which ReleaseLocal does not have). The build was signed with
+  `.local/sign-ghostty-x.sh` and put at `/Applications/Ghostty.app`; the app it replaced is kept
+  under `~/.config/zera-terminal-backups/GhosttyX-before-signal-20261121-125449/`. The copy that
+  was running was not closed and keeps running from that folder until it is quit.
+- **Fonts are made once.** The tab strip asked AppKit for a font inside every draw call. While
+  tabs were opened and switched quickly, a label now and then reached Core Text with a nil font
+  in its attributes; Core Text raises from inside `draw` and the app ends (the exception cannot
+  be caught on its way out of Core Text, which was tried). `SignalFont` now makes each font once
+  and keeps it, through a wrapper declared nullable (`GhosttyChromeFont` in
+  `ObjCExceptionCatcher`), and `safeDraw`/`safeSize` skip a label that has no font. Which step
+  inside AppKit lost the font was not pinned down: asking afresh about 12,000 times during two
+  demo runs never returned nil. Before the change 3 of 4 complete demo runs ended in this crash;
+  see the next point for the runs since. The belief recorded earlier, that emoji in a title
+  caused it, was wrong; titles still leave emoji out, as a matter of looks.
+- **Checked by** running the app's own demo (`GHOSTTYX_SIGNAL_DEMO=<folder>`, driven by
+  `.local/signal-loop.sh`), which photographs its window after each step and writes what the
+  core did to `trace.txt`: nothing folding with the settings as installed; a fold and an opening
+  by hand; a fold made for you with the cursor on the same row before and after (the bottom row,
+  with 25 rows taken back from the scrollback); output of a failed command left open; the same with a
+  full screen and the command line in the scrollback; the opening and folding motion slowed six
+  times; a fold from the last rows of output longer than the screen; the peek; the prompt styles;
+  and the four tab bar positions. Motion was checked two ways: slowed six times and photographed
+  frame by frame, and timed at real speed (tab switch and new tab: about 25 frames in 0.41 s,
+  longest gap 17 to 41 ms; sidebar slide: about 16 frames in 0.30 s with one gap of about 50 ms).
+  A stress run of 70 rapid tab switches, sidebar toggles, tab bar moves and new tabs is part of
+  every demo run; since the fonts change it ended without a crash in seven consecutive runs
+  (builds 42 to 48). Not covered: real clicks and wheel scrolling
+  (the demo calls the same functions the buttons do), resizing with blocks open, bash and fish
+  prompts (they get boxes and folding but keep their own prompt), very long sessions.

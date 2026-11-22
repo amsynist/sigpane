@@ -1265,6 +1265,81 @@ GHOSTTY_API bool ghostty_surface_read_selection(ghostty_surface_t, ghostty_text_
 GHOSTTY_API bool ghostty_surface_read_text(ghostty_surface_t,
                                               ghostty_selection_s,
                                               ghostty_text_s*);
+// Ghostty X: read one command's text using shell integration's prompt marks.
+// `back` is 0 for the most recent command that has output. `kind` is 0 for the
+// output and 1 for the command line. Free with ghostty_surface_free_text.
+GHOSTTY_API bool ghostty_surface_read_command(ghostty_surface_t,
+                                                 uint32_t,
+                                                 int,
+                                                 ghostty_text_s*);
+// Ghostty X: command blocks. Each command and its output is a block; the
+// app draws a box with copy and fold buttons around the ones in view.
+typedef struct {
+  int32_t top;
+  int32_t bottom;
+  int32_t head;
+  uint32_t lines;
+  uint32_t flags;
+} ghostty_block_s;
+typedef struct {
+  int32_t row;
+  uint16_t start;
+  uint16_t end;
+  uint32_t kind;
+} ghostty_prompt_chip_s;
+typedef struct {
+  uint32_t count;
+  uint32_t style;
+  int32_t pointer_row;
+  int32_t pointer_col;
+  uint32_t failed;
+  int32_t changed_row;
+  uint32_t changed_serial;
+  uint32_t view_top;
+  uint32_t ready;
+  ghostty_prompt_chip_s chips[6];
+} ghostty_prompt_info_s;
+typedef struct {
+  uint32_t cell_width;
+  uint32_t cell_height;
+  uint32_t padding_left;
+  uint32_t padding_top;
+  uint32_t padding_right;
+  uint32_t columns;
+  uint32_t rows;
+  ghostty_prompt_info_s prompt;
+} ghostty_block_geometry_s;
+#define GHOSTTY_BLOCK_CLIPPED_TOP (1u << 0)
+#define GHOSTTY_BLOCK_CLIPPED_BOTTOM (1u << 1)
+#define GHOSTTY_BLOCK_FOLDED (1u << 2)
+#define GHOSTTY_BLOCK_HAS_OUTPUT (1u << 3)
+#define GHOSTTY_BLOCK_LIVE (1u << 4)
+#define GHOSTTY_BLOCK_PAD_ABOVE (1u << 5)
+#define GHOSTTY_BLOCK_PAD_BELOW (1u << 6)
+#define GHOSTTY_BLOCK_RUNNING (1u << 7)
+#define GHOSTTY_BLOCK_CAN_TOGGLE (1u << 8)
+#define GHOSTTY_BLOCK_LABELED (1u << 9)
+#define GHOSTTY_BLOCK_EMPTY (1u << 10)
+#define GHOSTTY_BLOCK_POINTER (1u << 11)
+#define GHOSTTY_BLOCK_FAILED (1u << 12)
+GHOSTTY_API uint32_t ghostty_surface_blocks(ghostty_surface_t,
+                                            ghostty_block_s*,
+                                            uint32_t,
+                                            ghostty_block_geometry_s*);
+GHOSTTY_API bool ghostty_surface_block_toggle(ghostty_surface_t, uint32_t);
+GHOSTTY_API bool ghostty_surface_block_read(ghostty_surface_t,
+                                            uint32_t,
+                                            int,
+                                            ghostty_text_s*);
+// Ghostty X: fold command output longer than this many rows (0 = off), and
+// toggle the nearest folded block above the cursor.
+GHOSTTY_API void ghostty_set_fold_threshold(uint32_t);
+GHOSTTY_API void ghostty_set_fold_latest(bool);
+GHOSTTY_API bool ghostty_surface_fold_toggle_last(ghostty_surface_t);
+GHOSTTY_API int32_t ghostty_surface_fold_toggle_all(ghostty_surface_t);
+GHOSTTY_API bool ghostty_surface_plain_screen(ghostty_surface_t);
+GHOSTTY_API uint32_t ghostty_fold_last_status(void);
+GHOSTTY_API uint32_t ghostty_fold_trail(uint32_t, uint32_t);
 GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
 #ifdef __APPLE__

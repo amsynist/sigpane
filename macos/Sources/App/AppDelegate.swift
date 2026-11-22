@@ -249,6 +249,9 @@ class AppDelegate: NSObject,
         // Ghostty X: tab bar appearance lives in its own window with a live preview.
         installTabBarSettingsMenuItem()
 
+        // Ghostty X: a scripted walk through the chrome, only when asked for by environment.
+        SignalDemo.runIfRequested()
+
         // Start our update checker.
         updateController.startUpdater()
 

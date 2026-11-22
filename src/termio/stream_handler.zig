@@ -11,6 +11,7 @@ const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
 const terminal = @import("../terminal/main.zig");
+const terminal_fold = @import("../terminal/fold.zig");
 const terminfo = @import("../terminfo/main.zig");
 const posix = std.posix;
 
@@ -1483,6 +1484,10 @@ pub const StreamHandler = struct {
     ) !void {
         switch (cmd.action) {
             .end_input_start_output => {
+                // Ghostty X: the command before this one is folded now if its output
+                // was long. The newest output stays open until it is no longer newest.
+                terminal_fold.commandStarted(self.terminal);
+
                 self.surfaceMessageWriter(.start_command);
             },
 
@@ -1494,6 +1499,10 @@ pub const StreamHandler = struct {
                     const raw: i32 = cmd.readOption(.exit_code) orelse 0;
                     break :code std.math.cast(u8, raw) orelse 1;
                 };
+
+                // Ghostty X: note how the command ended, and fold its output now if
+                // folding is set not to wait for the next command.
+                terminal_fold.commandFinished(self.terminal, code);
 
                 self.surfaceMessageWriter(.{ .stop_command = code });
             },

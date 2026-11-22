@@ -6045,6 +6045,61 @@ pub fn eraseRowBounded(
     page.resetRow(&rows[node.rows() - 1]);
 }
 
+/// Ghostty X: physically remove `count` rows starting at screen row `y`,
+/// anywhere in the list. The rows below shift up, which leaves `count` blank
+/// rows at the very end. Up to `trim` of those are then dropped (as far as
+/// there is history to refill the active area with), which brings that many
+/// rows of scrollback back down into view. With `trim` zero nothing above the
+/// removed rows moves on screen. Returns how many rows the list shrank by.
+///
+/// Pins below the range move up with their rows. The caller reloads anything
+/// it caches from pins (the screen's cursor, in particular).
+pub fn eraseRowsAt(
+    self: *PageList,
+    y: usize,
+    count: usize,
+    trim: usize,
+) !usize {
+    if (count == 0) return 0;
+    defer self.assertIntegrity();
+
+    // The viewport's pin moves with its row like any other pin. Its cached
+    // offset does not: eraseRow would adjust it as if rows had gone from the
+    // top of the scrollback. Drop the cache so it is worked out again.
+    self.viewport_pin_row_offset = null;
+
+    // From the last row backwards, so each erase only shifts the rows that
+    // sit below the whole range.
+    var remaining: usize = count;
+    while (remaining > 0) : (remaining -= 1) {
+        try self.eraseRow(.{ .screen = .{ .y = @intCast(y + remaining - 1) } });
+    }
+    self.viewport_pin_row_offset = null;
+
+    // The erased rows are now blank rows at the very end of the list. Drop
+    // as many of them as there is history to refill the active area with.
+    const history = self.total_rows - self.rows;
+    const shrink = @min(trim, count, history, std.math.maxInt(size.CellCountInt));
+    var trimmed: usize = 0;
+    if (shrink > 0) {
+        trimmed = self.trimTrailingBlankRows(@intCast(shrink));
+        self.total_rows -= trimmed;
+    }
+
+    // A shorter list can leave a pinned viewport with fewer rows under it
+    // than a screen needs. It then shows the active area.
+    switch (self.viewport) {
+        .pin => if (self.pinIsActive(self.viewport_pin.*)) {
+            self.viewport = .active;
+        },
+        .top => if (self.pinIsActive(.{ .node = self.pages.first.? })) {
+            self.viewport = .active;
+        },
+        .active => {},
+    }
+    return trimmed;
+}
+
 /// Erase all history rows, optionally up to a bottom-left bound.
 /// This always starts from the beginning of the history area.
 pub fn eraseHistory(

@@ -16,6 +16,7 @@ const input = @import("../input.zig");
 const internal_os = @import("../os/main.zig");
 const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
+const terminal_fold = @import("../terminal/fold.zig");
 const CoreApp = @import("../App.zig");
 const CoreInspector = @import("../inspector/main.zig").Inspector;
 const CoreSurface = @import("../Surface.zig");
@@ -1939,6 +1940,227 @@ pub const CAPI = struct {
         ) orelse return false;
 
         return readTextLocked(surface, core_sel, result);
+    }
+
+    /// Ghostty X: read one command's text using the prompt marks left by shell
+    /// integration. `back` is 0 for the most recent command that has output,
+    /// 1 for the one before it, and so on. `kind` 0 reads that command's
+    /// output (folded or not) and 1 reads the command line that was typed.
+    /// Returns false when there is no such command. Free the result with
+    /// ghostty_surface_free_text.
+    ///
+    /// This walks the scrollback, so call it on demand and not per frame.
+    export fn ghostty_surface_read_command(
+        surface: *Surface,
+        back: u32,
+        kind: c_int,
+        result: *Text,
+    ) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+
+        const screen = core_surface.renderer_state.terminal.screens.active;
+        const bottom = screen.pages.getBottomRight(.screen) orelse return false;
+
+        var remaining = back;
+        var it = bottom.promptIterator(.left_up, null);
+        while (it.next()) |prompt_pin| {
+            // Prompts without output (an empty line, `cd`) are not counted.
+            const output = terminal_fold.blockOutput(screen, prompt_pin);
+            if (output == .none) continue;
+            if (remaining > 0) {
+                remaining -= 1;
+                continue;
+            }
+            return readBlockLocked(surface, prompt_pin, output, kind, result);
+        }
+
+        return false;
+    }
+
+    /// Reads a block's output (`kind` 0) or its command line (`kind` 1).
+    fn readBlockLocked(
+        surface: *Surface,
+        at: terminal.Pin,
+        output: terminal_fold.Output,
+        kind: c_int,
+        result: *Text,
+    ) bool {
+        const screen = surface.core_surface.renderer_state.terminal.screens.active;
+        if (kind == 1) {
+            const sel = terminal_fold.blockCommand(screen, at) orelse return false;
+            return readTextLocked(surface, sel, result);
+        }
+        switch (output) {
+            .none => return false,
+            .rows => |sel| return readTextLocked(surface, sel, result),
+            .stored => |id| {
+                // Folded away: hand back the text that was kept.
+                const text = terminal_fold.get(global.alloc(), id) orelse return false;
+                result.* = .{
+                    .tl_px_x = -1,
+                    .tl_px_y = -1,
+                    .offset_start = 0,
+                    .offset_len = 0,
+                    .text = text.ptr,
+                    .text_len = text.len,
+                };
+                return true;
+            },
+        }
+    }
+
+    /// Ghostty X: where the grid sits in the surface, in pixels, so the app
+    /// can draw over rows.
+    const BlockGeometry = extern struct {
+        cell_width: u32,
+        cell_height: u32,
+        padding_left: u32,
+        padding_top: u32,
+        padding_right: u32,
+        columns: u32,
+        rows: u32,
+        prompt: terminal_fold.PromptInfo,
+    };
+
+    /// Ghostty X: the command blocks in view, top to bottom. Fills `out`
+    /// with at most `max` blocks and returns how many there are. Cheap: it
+    /// reads the rows in view and nothing else.
+    export fn ghostty_surface_blocks(
+        surface: *Surface,
+        out: [*]terminal_fold.BlockInfo,
+        max: u32,
+        geometry: *BlockGeometry,
+    ) u32 {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+
+        const size = core_surface.size;
+        const grid = size.grid();
+        geometry.* = .{
+            .cell_width = size.cell.width,
+            .cell_height = size.cell.height,
+            .padding_left = size.padding.left,
+            .padding_top = size.padding.top,
+            .padding_right = size.padding.right,
+            .columns = grid.columns,
+            .rows = grid.rows,
+            .prompt = .{},
+        };
+        const count = terminal_fold.viewportBlocks(
+            core_surface.renderer_state.terminal,
+            out[0..max],
+            &geometry.prompt,
+        );
+        return @intCast(count);
+    }
+
+    /// Ghostty X: folds or opens the block that viewport row `row` belongs
+    /// to. Returns true if the screen changed.
+    export fn ghostty_surface_block_toggle(surface: *Surface, row: u32) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+
+        const t = core_surface.renderer_state.terminal;
+        const pin = t.screens.active.pages.pin(.{ .viewport = .{
+            .x = 0,
+            .y = @intCast(row),
+        } }) orelse return false;
+        const changed = terminal_fold.toggleAt(t, pin, global.alloc());
+        if (changed) surface.refresh();
+        return changed;
+    }
+
+    /// Ghostty X: reads the output (`kind` 0) or the command line (`kind` 1)
+    /// of the block that viewport row `row` belongs to. Free the result with
+    /// ghostty_surface_free_text.
+    export fn ghostty_surface_block_read(
+        surface: *Surface,
+        row: u32,
+        kind: c_int,
+        result: *Text,
+    ) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+
+        const screen = core_surface.renderer_state.terminal.screens.active;
+        const pin = screen.pages.pin(.{ .viewport = .{
+            .x = 0,
+            .y = @intCast(row),
+        } }) orelse return false;
+        return readBlockLocked(
+            surface,
+            pin,
+            terminal_fold.blockOutput(screen, pin),
+            kind,
+            result,
+        );
+    }
+
+    /// Ghostty X: output longer than `lines` rows folds away when its command
+    /// finishes. Zero turns folding off. Applies to every surface.
+    export fn ghostty_set_fold_threshold(lines: u32) void {
+        terminal_fold.threshold.store(lines, .monotonic);
+    }
+
+    /// Ghostty X: when true, long output is folded as soon as its command finishes.
+    /// By default it is folded when the next command starts.
+    export fn ghostty_set_fold_latest(latest: bool) void {
+        terminal_fold.fold_latest.store(latest, .monotonic);
+    }
+
+    /// Ghostty X: why the last finished command was or was not folded. See
+    /// `fold.last_status` for the codes.
+    export fn ghostty_fold_last_status() u32 {
+        return terminal_fold.last_status.load(.monotonic);
+    }
+
+    /// Ghostty X: one value from the recent fold outcomes, for diagnosis.
+    /// Index 0xffff returns how many outcomes were recorded.
+    export fn ghostty_fold_trail(index: u32, field: u32) u32 {
+        if (index == 0xffff) return terminal_fold.trail_count;
+        return terminal_fold.trail[index % terminal_fold.trail.len][field % 4];
+    }
+
+    /// Ghostty X: folds or opens the nearest labeled block above the cursor.
+    /// Returns true if the screen changed.
+    export fn ghostty_surface_fold_toggle_last(surface: *Surface) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+        const changed = terminal_fold.toggleLast(
+            core_surface.renderer_state.terminal,
+            global.alloc(),
+        );
+        if (changed) surface.refresh();
+        return changed;
+    }
+
+    /// Ghostty X: folds every block that has output, or opens every fold when there is
+    /// nothing left to fold. Returns how many blocks changed, or -1 when a program is
+    /// running or has the screen, in which case the key that asked belongs to it.
+    export fn ghostty_surface_fold_toggle_all(surface: *Surface) i32 {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+        const changed = terminal_fold.toggleAll(
+            core_surface.renderer_state.terminal,
+            global.alloc(),
+        ) orelse return -1;
+        if (changed > 0) surface.refresh();
+        return @intCast(changed);
+    }
+
+    /// Ghostty X: true while no full-screen program (an editor, a pager) has the screen.
+    export fn ghostty_surface_plain_screen(surface: *Surface) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+        return terminal_fold.plainScreen(core_surface.renderer_state.terminal);
     }
 
     fn readTextLocked(

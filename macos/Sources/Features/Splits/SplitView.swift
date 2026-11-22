@@ -12,6 +12,9 @@ struct SplitView<L: View, R: View>: View {
     /// Divider color
     let dividerColor: Color
 
+    /// Ghostty X: when set, a small handle in this color lights up while the divider is hovered.
+    let dividerAccent: Color?
+
     /// Minimum increment (in points) that this split can be resized by, in
     /// each direction. Both `height` and `width` should be whole numbers
     /// greater than or equal to 1.0
@@ -60,6 +63,7 @@ struct SplitView<L: View, R: View>: View {
                         visibleSize: splitterVisibleSize,
                         invisibleSize: splitterInvisibleSize,
                         color: dividerColor,
+                        accent: dividerAccent,
                         split: $split)
                     .position(splitterPoint)
                     .gesture(dragGesture(geo.size))
@@ -77,6 +81,7 @@ struct SplitView<L: View, R: View>: View {
         _ direction: SplitViewDirection,
         _ split: Binding<CGFloat>,
         dividerColor: Color,
+        dividerAccent: Color? = nil,
         dividerSize: CGFloat = 1,
         resizeIncrements: NSSize = .init(width: 1, height: 1),
         @ViewBuilder left: (() -> L),
@@ -86,6 +91,7 @@ struct SplitView<L: View, R: View>: View {
         self.direction = direction
         self._split = split
         self.dividerColor = dividerColor
+        self.dividerAccent = dividerAccent
         self.splitterVisibleSize = dividerSize
         self.resizeIncrements = resizeIncrements
         self.left = left()

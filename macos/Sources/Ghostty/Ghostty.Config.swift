@@ -79,6 +79,15 @@ extension Ghostty {
 
             ghostty_config_load_recursive_files(cfg)
 
+            #if os(macOS)
+            // Ghostty X: the Signal look's own colors and prompt switch, loaded last so
+            // they sit over the user's config while they are turned on in the Tab Bar
+            // settings. The user's config file is never edited.
+            if let overlay = SignalColors.overlayPath() {
+                ghostty_config_load_file(cfg, overlay)
+            }
+            #endif
+
             // TODO: we'd probably do some config loading here... for now we'd
             // have to do this synchronously. When we support config updating we can do
             // this async and update later.

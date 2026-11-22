@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import GhosttyKit
 import SwiftUI
 
 /// Use this container to achieve a glass effect at the window level.
@@ -19,6 +20,27 @@ class TerminalViewContainer: NSView {
     private var edgeSettings: AnyCancellable?
     private var keyObserver: NSObjectProtocol?
     private var terminalInsets: [NSLayoutConstraint] = []
+
+    /// Ghostty X Signal chrome: the trace from the selected sidebar tab to the focused
+    /// pane, and the status line under the terminal.
+    private let signalTrace = SignalTraceView()
+    private let statusBar = SignalStatusBar()
+    private var updateObserver: NSObjectProtocol?
+    private var occlusionObserver: NSObjectProtocol?
+    private var statusTitle: (raw: String, safe: String) = ("", "")
+    /// The strip thickness last applied, so a collapse or expand can be animated.
+    private var appliedThickness: CGFloat?
+    /// The sidebar's width while it is sliding between collapsed and expanded.
+    private var slidingThickness: CGFloat?
+    /// How far the terminal is shifted sideways from its resting place while the sidebar
+    /// slides. Its size does not change with this, so the terminal is not resized on
+    /// every frame of the slide.
+    private var railShift: CGFloat = 0
+    /// The sweep that crosses the terminal when its tab comes forward.
+    private let arrival = SignalArrivalView()
+    private var restingInsets: (position: TabBarSettings.Position, thickness: CGFloat, status: CGFloat) = (.top, 0, 0)
+    private let railMotion = SignalMotion()
+    private let arrivalMotion = SignalMotion()
 
     var windowThemeFrameView: NSView? {
         window?.contentView?.superview
@@ -65,6 +87,7 @@ class TerminalViewContainer: NSView {
             let settings = TabBarSettingsStore.shared.settings
             if settings.position.isVertical { size.width += settings.edgeThickness } else { size.height += settings.edgeThickness }
         }
+        if statusBar.superview != nil, !statusBar.isHidden { size.height += TabBarSettings.statusBarHeight }
         return size
     }
 
@@ -108,6 +131,28 @@ class TerminalViewContainer: NSView {
             edgeTabs = bar
             titlebarRule.wantsLayer = true
             addSubview(titlebarRule)
+            addSubview(statusBar)
+            addSubview(signalTrace)
+            arrival.isHidden = true
+            addSubview(arrival, positioned: .above, relativeTo: terminalView)
+            railMotion.name = "sidebar"
+            arrivalMotion.name = "arrival"
+            bar.onSignalChange = { [weak self] in self?.syncSignalChrome() }
+            bar.onSelectionChange = { [weak self] delta in self?.playTabTransition(delta) }
+            // A tab that is not on screen stops its timers and its trace animation.
+            occlusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.syncLiveness() }
+            }
+            syncLiveness()
+            // Focus moves and split resizes do not relayout this view, so follow the
+            // window's update pass; `syncSignalChrome` only redraws when something changed.
+            updateObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didUpdateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.syncSignalChrome() }
+            }
             // The published value arrives before the store updates, so use the one passed in.
             edgeSettings = TabBarSettingsStore.shared.$settings.sink { [weak self] settings in
                 self?.applyEdgeSettings(settings)
@@ -127,9 +172,22 @@ class TerminalViewContainer: NSView {
         edgeTabs?.removeFromSuperview()
         edgeTabs = nil
         titlebarRule.removeFromSuperview()
+        statusBar.removeFromSuperview()
+        signalTrace.removeFromSuperview()
+        arrival.removeFromSuperview()
         edgeSettings = nil
         if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
         keyObserver = nil
+        if let updateObserver { NotificationCenter.default.removeObserver(updateObserver) }
+        updateObserver = nil
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+        occlusionObserver = nil
+        appliedThickness = nil
+        railMotion.stop()
+        arrivalMotion.stop()
+        arrival.isHidden = true
+        slidingThickness = nil
+        railShift = 0
         applyTerminalInsets(position: .top, thickness: 0)
     }
 
@@ -139,28 +197,186 @@ class TerminalViewContainer: NSView {
             && (settings.showWithSingleTab || edgeTabs.displayedTabs.count > 1)
         edgeTabs.isHidden = !visible
         titlebarRule.layer?.backgroundColor = edgeTabs.theme.foreground.withAlphaComponent(0.08).cgColor
-        applyTerminalInsets(position: settings.position, thickness: visible ? settings.edgeThickness : 0)
-        needsLayout = true
+        statusBar.isHidden = !settings.showsStatusBar
+        let thickness = visible ? settings.edgeThickness : 0
+        let status = settings.showsStatusBar ? TabBarSettings.statusBarHeight : 0
+        // Collapsing or expanding the sidebar slides instead of snapping.
+        let slides = settings.isSignal && settings.animations && settings.position.isVertical
+            && appliedThickness != nil && appliedThickness != thickness
+            && window?.isFrontTab == true && !RoundedTerminalTabBar.reduceMotion
+        let from = slidingThickness ?? appliedThickness ?? thickness
+        appliedThickness = thickness
+        if slides {
+            // The terminal takes its new width once, at the start, and glides into place
+            // while the sidebar's width follows. Nothing is resized frame by frame.
+            let side: CGFloat = settings.position == .left ? 1 : -1
+            let position = settings.position
+            railMotion.run(duration: 0.3) { [weak self] progress in
+                guard let self else { return }
+                self.slidingThickness = progress < 1 ? from + (thickness - from) * progress : nil
+                self.railShift = side * (from - thickness) * (1 - progress)
+                self.applyTerminalInsets(position: position, thickness: thickness, status: status)
+                self.needsLayout = true
+                self.layoutSubtreeIfNeeded()
+            }
+        } else {
+            if !railMotion.isRunning || restingInsets.position != settings.position {
+                railMotion.stop()
+                slidingThickness = nil
+                railShift = 0
+            }
+            applyTerminalInsets(position: settings.position, thickness: thickness, status: status)
+            needsLayout = true
+        }
         invalidateIntrinsicContentSize()
     }
 
-    private func applyTerminalInsets(position: TabBarSettings.Position, thickness: CGFloat) {
+    /// Timers and the trace pulse only run while this tab's window is on screen.
+    private func syncLiveness() {
+        let visible = window?.occlusionState.contains(.visible) == true
+        edgeTabs?.isLive = visible
+        statusBar.isLive = visible
+        if visible { syncSignalChrome() } else { signalTrace.clear() }
+    }
+
+    /// A short fade and slide of the terminal when the selection moves to this tab.
+    private func playTabTransition(_ delta: Int) {
+        let settings = TabBarSettingsStore.shared.settings
+        guard settings.isSignal, settings.animations, delta != 0, window?.isFrontTab == true,
+              !RoundedTerminalTabBar.reduceMotion else { return }
+        // A line in the window's color sweeps the terminal in the direction the selection
+        // moved: down the list for a later tab with a sidebar, sideways with a top or
+        // bottom strip. It is drawn over the terminal. Nothing underneath moves, resizes
+        // or turns transparent, so a translucent window never shows through more.
+        arrival.color = edgeTabs?.signalColor ?? .controlAccentColor
+        arrival.shade = edgeTabs?.theme.background ?? .black
+        arrival.horizontal = !settings.position.isVertical
+        arrival.forward = delta > 0
+        arrival.frame = terminalView.frame
+        arrival.isHidden = false
+        arrivalMotion.run(duration: 0.4, delay: RoundedTerminalTabBar.settleDelay(for: window)) { [weak self] progress in
+            guard let self else { return }
+            self.arrival.progress = progress
+            if progress >= 1 { self.arrival.isHidden = true }
+        }
+    }
+
+    private func applyTerminalInsets(position: TabBarSettings.Position, thickness: CGFloat, status: CGFloat = 0) {
+        restingInsets = (position, thickness, status)
+        applyTerminalInsets()
+    }
+
+    /// Sets the terminal's edges: its resting place plus whatever shift is in progress.
+    /// A shift moves both edges of an axis together, so the terminal keeps its size.
+    private func applyTerminalInsets() {
         guard terminalInsets.count == 4 else { return }
-        terminalInsets[1].constant = position == .left ? thickness : 0
-        terminalInsets[2].constant = position == .bottom ? -thickness : 0
-        terminalInsets[3].constant = position == .right ? -thickness : 0
+        let (position, thickness, status) = restingInsets
+        terminalInsets[1].constant = (position == .left ? thickness : 0) + railShift
+        terminalInsets[2].constant = -((position == .bottom ? thickness : 0) + status)
+        terminalInsets[3].constant = (position == .right ? -thickness : 0) + railShift
     }
 
     private func layoutEdgeTabs() {
         titlebarRule.frame = NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
-        guard let edgeTabs, !edgeTabs.isHidden else { return }
-        let settings = TabBarSettingsStore.shared.settings
-        let t = settings.edgeThickness
-        edgeTabs.frame = switch settings.position {
-        case .top, .bottom: NSRect(x: 0, y: 0, width: bounds.width, height: t)
-        case .left: NSRect(x: 0, y: 0, width: t, height: bounds.height)
-        case .right: NSRect(x: bounds.width - t, y: 0, width: t, height: bounds.height)
+        // The status line spans the window's foot; the tab strip sits above it.
+        let status: CGFloat = statusBar.superview != nil && !statusBar.isHidden ? TabBarSettings.statusBarHeight : 0
+        statusBar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: status)
+        signalTrace.frame = bounds
+        if !arrival.isHidden { arrival.frame = terminalView.frame }
+        if let edgeTabs, !edgeTabs.isHidden {
+            let settings = TabBarSettingsStore.shared.settings
+            let t = slidingThickness ?? settings.edgeThickness
+            edgeTabs.frame = switch settings.position {
+            case .top, .bottom: NSRect(x: 0, y: status, width: bounds.width, height: t)
+            case .left: NSRect(x: 0, y: status, width: t, height: max(0, bounds.height - status))
+            case .right: NSRect(x: bounds.width - t, y: status, width: t, height: max(0, bounds.height - status))
+            }
         }
+        syncSignalChrome()
+    }
+
+    // MARK: Signal chrome
+
+    /// A pane's frame in this view: its terminal area plus the header strip above it.
+    private func paneFrame(of surface: NSView, header: CGFloat) -> NSRect? {
+        var node: NSView? = surface
+        while let current = node, !(current is SurfaceScrollView) { node = current.superview }
+        guard let host = node, let window, host.window === window else { return nil }
+        var rect = convert(host.bounds, from: host)
+        rect.size.height += header  // This view is not flipped, so the header is above.
+        return rect
+    }
+
+    /// Refreshes the trace and status line from the window's current tab, focus and layout.
+    private func syncSignalChrome() {
+        guard let window = window as? TerminalWindow, let edgeTabs else {
+            signalTrace.clear()
+            return
+        }
+        // This runs on every window update, so tabs that are not on screen do nothing.
+        guard window.occlusionState.contains(.visible) else { return }
+        let settings = TabBarSettingsStore.shared.settings
+        let controller = window.terminalController
+        let focused = controller?.focusedSurface
+        let leaves = controller?.surfaceTree.root?.leaves() ?? []
+        let color = edgeTabs.signalColor
+
+        if !statusBar.isHidden {
+            var content = SignalStatusBar.Content()
+            // This runs on every window update, so the cleaned title is kept until it changes.
+            let rawTitle = focused?.title ?? ""
+            if rawTitle != statusTitle.raw { statusTitle = (rawTitle, SignalText.chromeSafe(rawTitle)) }
+            content.title = statusTitle.safe
+            if let focused, let index = leaves.firstIndex(where: { $0 === focused }) {
+                content.pane = "pane \(SignalText.paneLetter(index)) of \(leaves.count)"
+            }
+            if let size = focused?.surfaceSize {
+                content.size = "\(size.columns)×\(size.rows)"
+            }
+            statusBar.theme = edgeTabs.theme
+            statusBar.color = color
+            statusBar.content = content
+            statusBar.hints = SignalHints.current(settings)
+        }
+
+        let header: CGFloat = settings.showsPaneHeaders ? TabBarSettings.paneHeaderHeight : 0
+        // The strip the trace starts from: the titlebar strip for Top, else the edge strip.
+        let strip: RoundedTerminalTabBar? = settings.position == .top
+            ? window.titlebarTabStrip
+            : (edgeTabs.isHidden ? nil : edgeTabs)
+        guard settings.isSignal, settings.signalTrace, let strip,
+              let focused, let pane = paneFrame(of: focused, header: header),
+              let tabFrame = strip.selectedTabFrame else {
+            signalTrace.clear()
+            return
+        }
+        let tab = convert(tabFrame, from: strip)
+        let half = settings.gutter / 2
+        func crisp(_ point: NSPoint) -> NSPoint { NSPoint(x: point.x.rounded() + 0.5, y: point.y.rounded() + 0.5) }
+        let points: [NSPoint]
+        switch settings.position {
+        case .left, .right:
+            // Out of the tab, along the gutter beside the sidebar, across to the pane's header.
+            let left = settings.position == .left
+            let lane = left ? edgeTabs.frame.maxX + half : edgeTabs.frame.minX - half
+            let port = NSPoint(x: left ? pane.minX : pane.maxX, y: pane.maxY - (header > 0 ? header / 2 : 12))
+            let start = NSPoint(x: left ? tab.maxX : tab.minX, y: tab.midY)
+            points = [start, NSPoint(x: lane, y: start.y), NSPoint(x: lane, y: port.y), port]
+        case .top, .bottom:
+            // Out of the tab, along the gutter beside the strip, then into the pane's edge.
+            let top = settings.position == .top
+            let lane = top ? terminalView.frame.maxY - half : terminalView.frame.minY + half
+            let x = min(max(tab.midX, pane.minX + 18), max(pane.minX + 18, pane.maxX - 18))
+            let start = NSPoint(x: tab.midX, y: top ? tab.minY : tab.maxY)
+            points = [start, NSPoint(x: start.x, y: lane), NSPoint(x: x, y: lane),
+                      NSPoint(x: x, y: top ? pane.maxY : pane.minY)]
+        }
+        let route = SignalTraceView.Route(
+            points: points.map(crisp),
+            panes: leaves.compactMap { paneFrame(of: $0, header: header) },
+            radius: settings.paneCornerRadius)
+        signalTrace.update(route, color: color,
+                           animated: settings.animations && !RoundedTerminalTabBar.reduceMotion)
     }
 
     func ghosttyConfigDidChange(_ config: Ghostty.Config, preferredBackgroundColor: NSColor?) {
@@ -174,6 +390,316 @@ class TerminalViewContainer: NSView {
             updateGlassEffectIfNeeded()
         } else {
             DispatchQueue.main.async(execute: updateGlassEffectIfNeeded)
+        }
+    }
+}
+
+// MARK: - Signal chrome views
+
+/// Ghostty X: the luminous line that wires the selected sidebar tab to the focused pane.
+/// It is masked by the panes, so it only shows in the gutters — like a trace running
+/// under the panes — and ends in a lit port on the focused pane's edge.
+private final class SignalTraceView: NSView {
+    private let masked = CALayer()
+    private let base = CAShapeLayer()
+    private let flow = CAShapeLayer()
+    private let port = CALayer()
+    private let paneMask = CAShapeLayer()
+
+    /// Where the trace runs: out of the selected tab, along the gutter beside the sidebar,
+    /// then across to the focused pane. `panes` are masked out of it.
+    struct Route: Equatable {
+        /// Corner points of the line, from the tab to the pane. Corners are rounded.
+        var points: [NSPoint]
+        var panes: [NSRect]
+        var radius: CGFloat
+    }
+
+    private struct Drawn: Equatable {
+        var route: Route
+        var color: NSColor
+        var size: NSSize
+        var animated: Bool
+    }
+
+    private var drawn: Drawn?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        isHidden = true
+        for line in [base, flow] {
+            line.fillColor = nil
+            line.lineCap = .round
+            line.lineJoin = .round
+        }
+        base.lineWidth = 1
+        flow.lineWidth = 1.6
+        flow.lineDashPattern = [14, 190]
+        flow.shadowOffset = .zero
+        flow.shadowRadius = 3
+        flow.shadowOpacity = 0.9
+        port.cornerRadius = 3.5
+        port.shadowOffset = .zero
+        port.shadowRadius = 5
+        port.shadowOpacity = 0.9
+        paneMask.fillRule = .evenOdd
+        masked.mask = paneMask
+        masked.addSublayer(base)
+        masked.addSublayer(flow)
+        layer?.addSublayer(masked)
+        layer?.addSublayer(port)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// The trace never takes clicks; they go to the tabs and terminal underneath.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func clear() {
+        guard !isHidden || drawn != nil else { return }
+        drawn = nil
+        isHidden = true
+        flow.removeAnimation(forKey: "flow")
+    }
+
+    func update(_ route: Route, color: NSColor, animated: Bool) {
+        // The pulse is re-added when AppKit has dropped it (e.g. after the window was hidden).
+        if animated, flow.animation(forKey: "flow") == nil {
+            let pulse = CABasicAnimation(keyPath: "lineDashPhase")
+            pulse.fromValue = 0
+            pulse.toValue = -204
+            pulse.duration = 2.2
+            pulse.repeatCount = .infinity
+            flow.add(pulse, forKey: "flow")
+        } else if !animated {
+            flow.removeAnimation(forKey: "flow")
+        }
+
+        let next = Drawn(route: route, color: color, size: bounds.size, animated: animated)
+        guard next != drawn else { return }
+        drawn = next
+        isHidden = false
+
+        guard let start = route.points.first, let end = route.points.last, route.points.count > 1 else {
+            clear()
+            return
+        }
+        let path = CGMutablePath()
+        path.move(to: start)
+        // Round each inner corner by up to 7 points, less where a leg is short.
+        for index in 1..<(route.points.count - 1) {
+            let before = route.points[index - 1]
+            let corner = route.points[index]
+            let after = route.points[index + 1]
+            let incoming = hypot(corner.x - before.x, corner.y - before.y)
+            let outgoing = hypot(after.x - corner.x, after.y - corner.y)
+            let reach = min(7, incoming / 2, outgoing / 2)
+            guard reach >= 0.5 else {
+                path.addLine(to: corner)
+                continue
+            }
+            path.addLine(to: CGPoint(x: corner.x + (before.x - corner.x) / incoming * reach,
+                                     y: corner.y + (before.y - corner.y) / incoming * reach))
+            path.addQuadCurve(to: CGPoint(x: corner.x + (after.x - corner.x) / outgoing * reach,
+                                          y: corner.y + (after.y - corner.y) / outgoing * reach),
+                              control: corner)
+        }
+        path.addLine(to: end)
+
+        let holes = CGMutablePath()
+        holes.addRect(bounds.insetBy(dx: -40, dy: -40))
+        for pane in route.panes where pane.width > 2 && pane.height > 2 {
+            let r = max(0, min(route.radius, pane.width / 2, pane.height / 2))
+            holes.addRoundedRect(in: pane, cornerWidth: r, cornerHeight: r)
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        masked.frame = bounds
+        paneMask.frame = bounds
+        paneMask.path = holes
+        base.path = path
+        flow.path = path
+        base.strokeColor = color.withAlphaComponent(0.45).cgColor
+        flow.strokeColor = color.cgColor
+        flow.shadowColor = color.cgColor
+        flow.isHidden = !animated
+        port.backgroundColor = color.cgColor
+        port.shadowColor = color.cgColor
+        port.frame = CGRect(x: end.x - 3.5, y: end.y - 3.5, width: 7, height: 7)
+        CATransaction.commit()
+    }
+}
+
+/// Ghostty X: the slim status line under the terminal in Signal windows — a live dot,
+/// the focused pane's title, which pane has focus, its size in cells, and the time.
+private final class SignalStatusBar: NSView {
+    struct Content: Equatable {
+        var title = ""
+        var pane = ""
+        var size = ""
+    }
+
+    var theme = RoundedTabTheme.fallback { didSet { if theme != oldValue { needsDisplay = true } } }
+    var color: NSColor = .controlAccentColor { didSet { if color != oldValue { needsDisplay = true } } }
+    var content = Content() { didSet { if content != oldValue { needsDisplay = true } } }
+    /// Keys worth remembering, most useful first. As many as fit are drawn in the free
+    /// middle of the line.
+    var hints: [SignalHints.Hint] = [] { didSet { if hints != oldValue { needsDisplay = true } } }
+    private var clock: Timer?
+    /// Where the clock was last drawn, so a tick repaints only that.
+    private var clockRect = NSRect.zero
+
+    /// False while the window is not on screen; the clock stops ticking.
+    var isLive = true {
+        didSet { if isLive != oldValue { updateClock() } }
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    override var isFlipped: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateClock()
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        updateClock()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        updateClock()
+    }
+
+    private func updateClock() {
+        guard window != nil, isLive, !isHidden else {
+            clock?.invalidate()
+            clock = nil
+            return
+        }
+        guard clock == nil else { return }
+        needsDisplay = true
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                self.setNeedsDisplay(self.clockRect)
+            }
+        }
+        // A whole second of slack lets the system batch this wakeup with others.
+        timer.tolerance = 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        clock = timer
+    }
+
+    /// Draws one piece of text on the status line and returns the x where it ends.
+    private func put(_ string: String, at x: CGFloat, font: NSFont, color: NSColor,
+                     maxWidth: CGFloat = .greatestFiniteMagnitude) -> CGFloat {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        let text = NSAttributedString(string: string, attributes: [
+            .font: font, .foregroundColor: color, .paragraphStyle: style,
+        ])
+        let size = text.safeSize()
+        let width = min(ceil(size.width), max(0, maxWidth))
+        let rect = NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: width, height: size.height)
+        text.safeDraw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        return x + width
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        let fg = theme.foreground
+        theme.background.withAlphaComponent(theme.backgroundOpacity).setFill()
+        bounds.fill()
+        fg.withAlphaComponent(0.07).setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+
+        let regular = SignalFont.mono(10.5, .regular)
+        let strong = SignalFont.mono(10.5, .semibold)
+
+        // Trailing side first, so a long title on the leading side knows where to stop.
+        var right = bounds.width - 14
+        let trailing: [(String, CGFloat)] = [
+            (Self.timeFormatter.string(from: Date()), 0.55), (content.size, 0.55), (content.pane, 0.32),
+        ]
+        for (index, (string, alpha)) in trailing.enumerated() where !string.isEmpty {
+            let width = ceil(NSAttributedString(string: string, attributes: [.font: regular]).safeSize().width)
+            guard right - width > 90 else { break }
+            _ = put(string, at: right - width, font: regular, color: fg.withAlphaComponent(alpha))
+            if index == 0 { clockRect = NSRect(x: right - width - 2, y: 0, width: width + 4, height: bounds.height) }
+            right -= width + 16
+        }
+
+        var x: CGFloat = 14
+        color.setFill()
+        NSBezierPath(ovalIn: NSRect(x: x, y: (bounds.midY - 3).rounded(), width: 6, height: 6)).fill()
+        x += 13
+        x = put("LIVE", at: x, font: strong, color: color) + 16
+        // With hints to show, a long title gives up some of its room for them.
+        let room = right - x
+        let titleRoom = hints.isEmpty ? room : min(room, max(160, room * 0.38))
+        if !content.title.isEmpty, room > 40 {
+            x = put(content.title, at: x, font: regular, color: fg.withAlphaComponent(0.4), maxWidth: titleRoom)
+        }
+        // The clock repaints only itself every second; the hints are left of it.
+        if !hints.isEmpty, dirtyRect.minX < right {
+            drawHints(from: x + 28, to: right - 6)
+        }
+    }
+
+    /// The key hints, as many as fit, centered in the free stretch of the line: each a
+    /// small key cap and what it does.
+    private func drawHints(from start: CGFloat, to end: CGFloat) {
+        let fg = theme.foreground
+        let keyFont = SignalFont.mono(9.5, .semibold)
+        let labelFont = SignalFont.mono(10, .regular)
+        let gap: CGFloat = 18
+        var pieces: [(keys: NSAttributedString, label: NSAttributedString, cap: CGFloat, width: CGFloat)] = []
+        var total: CGFloat = 0
+        for hint in hints {
+            let keys = NSAttributedString(string: hint.keys, attributes: [
+                .font: keyFont, .foregroundColor: fg.withAlphaComponent(0.62), .kern: 0.6,
+            ])
+            let label = NSAttributedString(string: hint.label, attributes: [
+                .font: labelFont, .foregroundColor: fg.withAlphaComponent(0.36),
+            ])
+            let cap = ceil(keys.safeSize().width) + 10
+            let width = cap + 6 + ceil(label.safeSize().width)
+            guard total + width + (pieces.isEmpty ? 0 : gap) <= end - start else { break }
+            total += width + (pieces.isEmpty ? 0 : gap)
+            pieces.append((keys, label, cap, width))
+        }
+        guard !pieces.isEmpty else { return }
+
+        var x = (start + (end - start - total) / 2).rounded()
+        let capHeight: CGFloat = 15
+        let capY = ((bounds.height - capHeight) / 2).rounded()
+        for piece in pieces {
+            let box = NSBezierPath(
+                roundedRect: NSRect(x: x + 0.5, y: capY + 0.5, width: piece.cap - 1, height: capHeight - 1),
+                xRadius: 4, yRadius: 4)
+            fg.withAlphaComponent(0.05).setFill()
+            box.fill()
+            fg.withAlphaComponent(0.16).setStroke()
+            box.lineWidth = 1
+            box.stroke()
+            let keySize = piece.keys.safeSize()
+            piece.keys.safeDraw(at: NSPoint(
+                x: x + ((piece.cap - keySize.width) / 2).rounded(),
+                y: capY + ((capHeight - keySize.height) / 2).rounded()))
+            let labelSize = piece.label.safeSize()
+            piece.label.safeDraw(at: NSPoint(
+                x: x + piece.cap + 6, y: ((bounds.height - labelSize.height) / 2).rounded()))
+            x += piece.width + gap
         }
     }
 }
@@ -348,5 +874,50 @@ extension TerminalViewContainer {
             self.backgroundOpacity = config.backgroundOpacity
             self.cornerRadius = cornerRadius
         }
+    }
+}
+
+/// Ghostty X: the sweep that crosses a terminal when its tab comes forward. A thin line in
+/// the window's color travels across with a short glow trailing it, over a shade that
+/// lifts as the line goes. It is only on screen for the length of the sweep.
+private final class SignalArrivalView: NSView {
+    var color: NSColor = .controlAccentColor
+    var shade: NSColor = .black
+    /// Along the width (top and bottom tab strips) instead of down the height.
+    var horizontal = false
+    /// Towards the far edge (a later tab) or back from it.
+    var forward = true
+    /// 0 as the sweep starts, 1 once it has crossed.
+    var progress: CGFloat = 1 { didSet { needsDisplay = true } }
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        guard progress < 1, bounds.width > 1, bounds.height > 1 else { return }
+        shade.withAlphaComponent(0.3 * (1 - progress)).setFill()
+        bounds.fill(using: .sourceOver)
+
+        // The line fades in as it leaves one edge and out as it reaches the other.
+        let strength = sin(progress * .pi)
+        let length = horizontal ? bounds.width : bounds.height
+        let at = (forward ? progress : 1 - progress) * length
+        let tail: CGFloat = forward ? -110 : 110
+        let glow = horizontal
+            ? NSRect(x: min(at, at + tail), y: 0, width: abs(tail), height: bounds.height)
+            : NSRect(x: 0, y: min(at, at + tail), width: bounds.width, height: abs(tail))
+        // The glow is brightest at the line and gone at the end of the tail.
+        let gradient = NSGradient(
+            starting: color.withAlphaComponent(forward ? 0 : 0.16 * strength),
+            ending: color.withAlphaComponent(forward ? 0.16 * strength : 0))
+        gradient?.draw(in: glow, angle: horizontal ? 0 : 90)
+
+        color.withAlphaComponent(0.9 * strength).setFill()
+        let line = horizontal
+            ? NSRect(x: at - 0.75, y: 0, width: 1.5, height: bounds.height)
+            : NSRect(x: 0, y: at - 0.75, width: bounds.width, height: 1.5)
+        line.fill(using: .sourceOver)
     }
 }

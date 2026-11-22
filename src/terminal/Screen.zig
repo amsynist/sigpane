@@ -930,6 +930,17 @@ pub fn cursorAbsolute(self: *Screen, x: size.CellCountInt, y: size.CellCountInt)
     self.cursor.page_cell = page_rac.cell;
 }
 
+/// Ghostty X: physically remove `count` rows starting at screen row `y`. See
+/// `PageList.eraseRowsAt`. The cursor stays on its own content, which moves
+/// up when the rows are above it.
+///
+/// The cursor must carry the default style and no hyperlink when this is
+/// called, because its row can move to another page.
+pub fn eraseRowsAt(self: *Screen, y: usize, count: usize, trim: usize) !void {
+    _ = try self.pages.eraseRowsAt(y, count, trim);
+    self.cursorReload();
+}
+
 /// Reloads the cursor pointer information into the screen. This is expensive
 /// so it should only be done in cases where the pointers are invalidated
 /// in such a way that its difficult to recover otherwise.

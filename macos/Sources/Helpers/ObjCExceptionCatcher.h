@@ -18,3 +18,20 @@ FOUNDATION_EXPORT BOOL GhosttyShowWindowSafely(
     id _Nullable sender,
     NSError * _Nullable * _Nullable error
 );
+
+@class NSFont;
+
+/// A system font for the Ghostty X chrome, with the result declared nullable.
+///
+/// AppKit declares these calls as never returning nil, so Swift does not check what
+/// comes back and would pass a nil straight into a label's attributes, where Core Text
+/// raises from inside a draw call and the app ends. Going through here makes Swift
+/// handle a nil (see `SignalFont` in TabBarSettings.swift for the crash this guards).
+///
+/// `kind`: 0 system, 1 monospaced, 2 system with monospaced digits, 3 title bar (which
+/// ignores `weight`).
+FOUNDATION_EXPORT NSFont * _Nullable GhosttyChromeFont(
+    NSInteger kind,
+    CGFloat size,
+    CGFloat weight
+);

@@ -23,6 +23,7 @@ class TitlebarTabsTahoeTerminalWindow: TransparentTitlebarTerminalWindow, NSTool
     override var supportsUpdateAccessory: Bool { false }
     override var usesNativeTabTitleEditor: Bool { false }
     override var drawsCustomTabStrip: Bool { true }
+    override var titlebarTabStrip: RoundedTerminalTabBar? { roundedTabs.window == nil ? nil : roundedTabs }
 
     /// The toolbar title hides while AppKit's tab bar is attached. With tabs at the bottom
     /// or in a sidebar, the titlebar placeholder strip draws the title itself (the toolbar

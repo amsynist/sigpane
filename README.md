@@ -4,17 +4,16 @@ Ghostty X is a macOS appearance fork of Ghostty. Its default Signal interface
 adds session cards, a focus trace around split panes, and command blocks you
 can fold and copy inside the terminal.
 
-[![Ghostty X Signal walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough.mp4)
+[![Ghostty X Signal walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough.mp4)
 
 [Watch the 4K walkthrough (52 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough.mp4) ·
 [Download the offline HTML walkthrough (ZIP)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough-html.zip)
 
 The walkthrough and screenshots render fictional terminal sessions over the
-teal cutting-mat wallpaper at 3840 × 2496. Select any screenshot to open the
-full-resolution PNG. Open the downloaded HTML file to jump directly to any
+teal cutting-mat wallpaper at 3840 × 2496. Select a close-up to open the full desktop screenshot. Open the downloaded HTML file to jump directly to any
 tab position, prompt style, or command-block action.
 
-## Terminal layouts
+## Sidebars and tabs
 
 Select **Tab Bar… → Position** to move the session strip. Signal shows numbered
 session cards in the left or right sidebar and compact tabs at the top or bottom.
@@ -23,15 +22,43 @@ sidebar to numbered tiles.
 
 | Left sidebar | Right sidebar |
 | --- | --- |
-| [![Left session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-left.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-left.png) | [![Right session rail and three nested terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-right.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-right.png) |
+| [![Left sidebar with four session cards](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-left.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-left.png) | [![Right sidebar with four session cards](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-right.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-right.png) |
 
-| Top tabs | Bottom tabs |
-| --- | --- |
-| [![Top session tabs above three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-top.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-top.png) | [![Bottom session tabs below three terminal panes](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-bottom.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-bottom.png) |
+### Top tabs
 
-## Command blocks and the Signal prompt
+[![Top tab bar and New session button](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-top.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-top.png)
 
-[![A selected command block with the keyboard copy hint](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-blocks.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-blocks.png)
+### Bottom tabs
+
+[![Bottom tab bar and New session button](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-bottom.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-bottom.png)
+
+## Prompt styles
+
+Choose **Tab Bar… → Terminal → Prompt style** to change the zsh prompt.
+
+### Breadcrumb Rail
+
+[![Breadcrumb Rail prompt with a full path and Git branch](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-rail.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-rail.png)
+
+### Command Capsule
+
+[![Command Capsule with the environment, branch and command on one line](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-capsule.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-capsule.png)
+
+### Tabbed Dock
+
+[![Tabbed Dock with directory, Git and Python tabs above the command](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-dock.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-dock.png)
+
+### HUD Brackets
+
+[![HUD Brackets with corner brackets and labeled context](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-hud.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-hud.png)
+
+### Command Card
+
+[![Command Card with directory and Git chips above the command line](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-card.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-card.png)
+
+## Command blocks
+
+[![A selected command block with the keyboard copy hint](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-blocks.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-blocks.png)
 
 - **Fold and reopen output.** Use a block’s chevron or press **Control-F** to
   fold or reopen eligible blocks at the shell prompt. Optional automatic
@@ -45,16 +72,6 @@ sidebar to numbered tiles.
 - **Follow focus.** The active tab’s color carries through to the pane outline,
   trace, titlebar and status line. The status line can show the current
   shortcuts for tab, pane and block actions.
-
-Choose **Tab Bar… → Terminal → Prompt style** to change the zsh prompt.
-
-[![HUD Brackets in a terminal with a collapsed Signal sidebar](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-hud.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-hud.png)
-
-[Breadcrumb Rail](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-rail.png) ·
-[Command Capsule](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-capsule.png) ·
-[Tabbed Dock](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-dock.png) ·
-[HUD Brackets](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-hud.png) ·
-[Command Card](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-card.png)
 
 ## Configuration
 

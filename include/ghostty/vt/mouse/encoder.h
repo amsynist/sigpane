@@ -69,7 +69,7 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * surface-space positions into encoded coordinates.
  *
  * This is a sized struct. Initialize it with GHOSTTY_INIT_SIZED(), then set
- * the fields you need. See @ref sized_sec.
+ * the fields you need. See @ref sized-structs.
  *
  * @ingroup mouse
  */
@@ -119,23 +119,57 @@ typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_MOUSE_ENCODER_OPT_INVALID = 0,
 
   /** Mouse tracking mode (value: GhosttyMouseTrackingMode,
-   *  default: GHOSTTY_MOUSE_TRACKING_NONE). */
+   *  default: GHOSTTY_MOUSE_TRACKING_NONE). Changing it forgets the cell
+   *  remembered by GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL. */
   GHOSTTY_MOUSE_ENCODER_OPT_EVENT = 1,
 
   /** Mouse output format (value: GhosttyMouseFormat,
-   *  default: GHOSTTY_MOUSE_FORMAT_X10). */
+   *  default: GHOSTTY_MOUSE_FORMAT_X10). Changing it forgets the cell
+   *  remembered by GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL. */
   GHOSTTY_MOUSE_ENCODER_OPT_FORMAT = 2,
 
   /** Renderer size context (value: GhosttyMouseEncoderSize, default: a
-   *  1x1 pixel screen with 1x1 pixel cells and no padding). */
+   *  1x1 pixel screen with 1x1 pixel cells and no padding). Changing it
+   *  forgets the cell remembered by
+   *  GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL. Setting the size it
+   *  already has does nothing, so it's fine to set it before every event. */
   GHOSTTY_MOUSE_ENCODER_OPT_SIZE = 3,
 
   /** Whether any mouse button is currently pressed (value: bool,
    *  default: false). */
   GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED = 4,
 
-  /** Whether to enable motion deduplication by last cell (value: bool,
-   *  default: false). */
+  /**
+   * Whether to skip motion events that stay in the same cell (value: bool,
+   * default: false).
+   *
+   * When this is on, the encoder remembers the cell of the last event it
+   * wrote, and writes nothing for a motion event in that same cell. Motion
+   * is reported only when the pointer moves to a different cell. This is
+   * what xterm and Ghostty do, and it's what most programs expect. Turn it
+   * on unless you have a reason not to.
+   *
+   * The SGR-Pixels format reports positions in pixels rather than cells,
+   * so this option has no effect on it. Every motion event is written.
+   *
+   * The encoder forgets the remembered cell when the tracking mode, the
+   * format or the size changes, so the first motion after a change is
+   * always written. Setting an option to the value it already has doesn't
+   * count as a change. Turning this option off, or calling
+   * ghostty_mouse_encoder_reset(), forgets it too.
+   *
+   * That means you can sync the encoder before every event safely:
+   *
+   * @code{.c}
+   * ghostty_mouse_encoder_set(encoder,
+   *     GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &(bool){true});
+   *
+   * // For each mouse event:
+   * ghostty_mouse_encoder_set_from_terminal(encoder, terminal);
+   * ghostty_mouse_encoder_set(encoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &size);
+   * ghostty_mouse_encoder_encode(encoder, event, buf, sizeof(buf), &written);
+   * @endcode
+   */
   GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL = 5,
   GHOSTTY_MOUSE_ENCODER_OPT_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyMouseEncoderOption;
@@ -144,7 +178,8 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * Create a new mouse encoder instance.
  *
  * @param allocator Pointer to allocator, or NULL to use the default allocator
- * @param encoder Pointer to store the created encoder handle
+ * @param encoder Pointer to store the created encoder handle (NULL returns
+ *                GHOSTTY_INVALID_VALUE)
  * @return GHOSTTY_SUCCESS on success, or an error code on failure
  *
  * @ingroup mouse
@@ -166,7 +201,8 @@ GHOSTTY_API void ghostty_mouse_encoder_free(GhosttyMouseEncoder encoder);
  *
  * Passing NULL for `value` resets the option to its default, the same
  * value a new encoder starts with. Each option's default is listed on
- * GhosttyMouseEncoderOption.
+ * GhosttyMouseEncoderOption. A reset works like setting the default
+ * yourself. If the option already has its default, nothing changes.
  *
  * @code{.c}
  * GhosttyMouseFormat format = GHOSTTY_MOUSE_FORMAT_SGR;
@@ -174,7 +210,7 @@ GHOSTTY_API void ghostty_mouse_encoder_free(GhosttyMouseEncoder encoder);
  *     encoder, GHOSTTY_MOUSE_ENCODER_OPT_FORMAT, &format);
  * @endcode
  *
- * @param encoder The encoder handle, must not be NULL
+ * @param encoder The encoder handle (NULL returns GHOSTTY_INVALID_VALUE)
  * @param option The option to set
  * @param value Pointer to option value (type depends on option), or NULL to
  *              reset the option to its default
@@ -195,6 +231,12 @@ GHOSTTY_API GhosttyResult ghostty_mouse_encoder_set(GhosttyMouseEncoder encoder,
  *
  * This sets tracking mode and output format from terminal state.
  * It does not modify size or any-button state.
+ *
+ * If the terminal's tracking mode or format differs from the encoder's,
+ * the encoder also forgets the cell remembered by
+ * GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, so the next motion event is
+ * written even if it's in that cell. If neither differs, the encoder keeps
+ * the remembered cell. You can call this before every event.
  *
  * @param encoder The encoder handle
  * @param terminal The terminal handle
@@ -244,13 +286,13 @@ GHOSTTY_API GhosttyResult ghostty_mouse_encoder_reset(GhosttyMouseEncoder encode
  * }
  * @endcode
  *
- * @param encoder The encoder handle, must not be NULL
- * @param event The mouse event to encode, must not be NULL
+ * @param encoder The encoder handle (NULL returns GHOSTTY_INVALID_VALUE)
+ * @param event The mouse event to encode (NULL returns GHOSTTY_INVALID_VALUE)
  * @param buf Buffer to write the sequence into. May be NULL if @p buf_len
  *            is 0.
  * @param buf_len Size of @p buf in bytes
  * @param[out] out_written The number of bytes written, or the size needed
- *             if the result is GHOSTTY_OUT_OF_SPACE. Must not be NULL.
+ *             if the result is GHOSTTY_OUT_OF_SPACE. NULL returns GHOSTTY_INVALID_VALUE.
  * @return GHOSTTY_SUCCESS on success, GHOSTTY_OUT_OF_SPACE if buffer is too small,
  *         or another error code
  *

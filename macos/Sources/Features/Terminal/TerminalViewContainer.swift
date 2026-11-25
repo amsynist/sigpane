@@ -126,7 +126,11 @@ class TerminalViewContainer: NSView {
         if edgeTabs?.model.hostWindow !== window {
             removeEdgeTabs()
             let bar = RoundedTerminalTabBar(hostWindow: window, placement: .edge)
-            bar.onTabCountChange = { [weak self] _ in self?.applyEdgeSettings(TabBarSettingsStore.shared.settings) }
+            // A tab joining or leaving shows or hides the strip at once: a new tab's window
+            // must open with its sidebar already in place, not slide it in from nothing.
+            bar.onTabCountChange = { [weak self] _ in
+                self?.applyEdgeSettings(TabBarSettingsStore.shared.settings, animated: false)
+            }
             addSubview(bar)
             edgeTabs = bar
             titlebarRule.wantsLayer = true
@@ -165,7 +169,7 @@ class TerminalViewContainer: NSView {
             }
         }
         edgeTabs?.refresh()
-        applyEdgeSettings(TabBarSettingsStore.shared.settings)
+        applyEdgeSettings(TabBarSettingsStore.shared.settings, animated: false)
     }
 
     private func removeEdgeTabs() {
@@ -191,7 +195,9 @@ class TerminalViewContainer: NSView {
         applyTerminalInsets(position: .top, thickness: 0)
     }
 
-    private func applyEdgeSettings(_ settings: TabBarSettings) {
+    /// `animated` is for the user collapsing or expanding the sidebar from settings. Tabs
+    /// coming and going, and a window being set up, place the strip without motion.
+    private func applyEdgeSettings(_ settings: TabBarSettings, animated: Bool = true) {
         guard let edgeTabs else { return }
         let visible = settings.position != .top
             && (settings.showWithSingleTab || edgeTabs.displayedTabs.count > 1)
@@ -201,7 +207,7 @@ class TerminalViewContainer: NSView {
         let thickness = visible ? settings.edgeThickness : 0
         let status = settings.showsStatusBar ? TabBarSettings.statusBarHeight : 0
         // Collapsing or expanding the sidebar slides instead of snapping.
-        let slides = settings.isSignal && settings.animations && settings.position.isVertical
+        let slides = animated && settings.isSignal && settings.animations && settings.position.isVertical
             && appliedThickness != nil && appliedThickness != thickness
             && window?.isFrontTab == true && !RoundedTerminalTabBar.reduceMotion
         let from = slidingThickness ?? appliedThickness ?? thickness
@@ -249,7 +255,6 @@ class TerminalViewContainer: NSView {
         // bottom strip. It is drawn over the terminal. Nothing underneath moves, resizes
         // or turns transparent, so a translucent window never shows through more.
         arrival.color = edgeTabs?.signalColor ?? .controlAccentColor
-        arrival.shade = edgeTabs?.theme.background ?? .black
         arrival.horizontal = !settings.position.isVertical
         arrival.forward = delta > 0
         arrival.frame = terminalView.frame
@@ -878,11 +883,10 @@ extension TerminalViewContainer {
 }
 
 /// Ghostty X: the sweep that crosses a terminal when its tab comes forward. A thin line in
-/// the window's color travels across with a short glow trailing it, over a shade that
-/// lifts as the line goes. It is only on screen for the length of the sweep.
+/// the window's color travels across with a short glow trailing it. Nothing under it is
+/// darkened. It is only on screen for the length of the sweep.
 private final class SignalArrivalView: NSView {
     var color: NSColor = .controlAccentColor
-    var shade: NSColor = .black
     /// Along the width (top and bottom tab strips) instead of down the height.
     var horizontal = false
     /// Towards the far edge (a later tab) or back from it.
@@ -897,8 +901,6 @@ private final class SignalArrivalView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
         guard progress < 1, bounds.width > 1, bounds.height > 1 else { return }
-        shade.withAlphaComponent(0.3 * (1 - progress)).setFill()
-        bounds.fill(using: .sourceOver)
 
         // The line fades in as it leaves one edge and out as it reaches the other.
         let strength = sin(progress * .pi)

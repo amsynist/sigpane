@@ -334,10 +334,13 @@ enum SignalColors {
         return text
     }
 
+    /// Hides the routine core cursor while Signal draws its own animated glowing cursor.
+    static let cursor = "cursor-opacity = 0\n"
+
     /// The config text for these settings; empty when nothing is overridden.
     static func overlay(for settings: TabBarSettings) -> String {
         guard settings.isSignal else { return "" }
-        return (settings.signalColors ? colors : "") + (settings.signalPrompt ? prompt : "")
+        return (settings.signalColors ? colors : "") + (settings.signalPrompt ? prompt : "") + cursor
     }
 
     /// A file in the app's cache folder. A demo run keeps its own set, so it never

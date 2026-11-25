@@ -21,6 +21,9 @@ class QuickTerminalController: BaseTerminalController {
     // The active space when the quick terminal was last shown.
     private var previousActiveSpace: CGSSpace?
 
+    private var wallpaperURL: URL?
+    private var wallpaperModificationDate: Date?
+
     /// Cache for per-screen window state.
     let screenStateCache: QuickTerminalScreenStateCache
 
@@ -52,7 +55,8 @@ class QuickTerminalController: BaseTerminalController {
         // restoration.
         restorable = (base?.command ?? "") == ""
         self.restorationState = restorationState
-        self.screenStateCache = QuickTerminalScreenStateCache(stateByDisplay: restorationState?.screenStateEntries ?? [:])
+        let savedFrames = restorationState?.position == position ? restorationState?.screenStateEntries : nil
+        self.screenStateCache = QuickTerminalScreenStateCache(stateByDisplay: savedFrames ?? [:])
         // Important detail here: we initialize with an empty surface tree so
         // that we don't start a terminal process. This gets started when the
         // first terminal is shown in `animateIn`.
@@ -422,11 +426,27 @@ class QuickTerminalController: BaseTerminalController {
         }
     }
 
+    private func updateWallpaperAccent(on screen: NSScreen) {
+        let url = NSWorkspace.shared.desktopImageURL(for: screen)
+        let modified = (try? url?.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        guard url != wallpaperURL || modified != wallpaperModificationDate else { return }
+        wallpaperURL = url
+        wallpaperModificationDate = modified
+        let accent = url.flatMap(QuickTerminalWallpaperAccent.color(from:))
+        if accent != wallpaperSignalAccent {
+            wallpaperSignalAccent = accent
+        }
+    }
+
     private func animateWindowIn(window: NSWindow, from position: QuickTerminalPosition) {
         guard let screen = derivedConfig.quickTerminalScreen.screen else { return }
+        updateWallpaperAccent(on: screen)
 
-        // Grab our last closed frame to use from the cache.
-        let closedFrame = screenStateCache.frame(for: screen)
+        // Both explicit dimensions define the frame for a centered terminal.
+        // The cached frame is useful when at least one dimension is left to the app.
+        let size = derivedConfig.quickTerminalSize
+        let usesConfiguredFrame = position == .center && size.primary != nil && size.secondary != nil
+        let closedFrame = usesConfiguredFrame ? nil : screenStateCache.frame(for: screen)
 
         // Move our window off screen to the initial animation position.
         position.setInitial(

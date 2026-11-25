@@ -1297,6 +1297,10 @@ typedef struct {
   uint32_t changed_serial;
   uint32_t view_top;
   uint32_t ready;
+  int32_t cursor_row;
+  int32_t cursor_col;
+  uint32_t cursor_style;
+  uint32_t cursor_flags;
   ghostty_prompt_chip_s chips[6];
 } ghostty_prompt_info_s;
 typedef struct {

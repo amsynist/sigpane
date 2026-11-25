@@ -1,6 +1,17 @@
 import GhosttyKit
 import SwiftUI
 
+private struct WallpaperSignalAccentKey: EnvironmentKey {
+    static let defaultValue: NSColor? = nil
+}
+
+extension EnvironmentValues {
+    var wallpaperSignalAccent: NSColor? {
+        get { self[WallpaperSignalAccentKey.self] }
+        set { self[WallpaperSignalAccentKey.self] = newValue }
+    }
+}
+
 /// A single operation within the split tree.
 ///
 /// Rather than binding the split tree (which is immutable), any mutable operations are
@@ -74,6 +85,7 @@ struct TerminalSplitTreeView: View {
 
 private struct TerminalSplitSubtreeView: View {
     @EnvironmentObject var ghostty: Ghostty.App
+    @Environment(\.wallpaperSignalAccent) private var wallpaperAccent
     @ObservedObject private var chrome = TabBarSettingsStore.shared
 
     let node: SplitTree<Ghostty.SurfaceView>.Node
@@ -117,10 +129,17 @@ private struct TerminalSplitSubtreeView: View {
             )
         }
     }
+
+    private func dividerTint(of node: SplitTree<Ghostty.SurfaceView>.Node) -> Color {
+        let color = wallpaperAccent ?? RoundedTabTheme.current.signal(
+            for: node.leftmostLeaf().window, settings: chrome.settings)
+        return Color(nsColor: color)
+    }
 }
 
 private struct TerminalSplitLeaf: View {
     @EnvironmentObject var ghostty: Ghostty.App
+    @Environment(\.wallpaperSignalAccent) private var wallpaperAccent
     @ObservedObject private var chrome = TabBarSettingsStore.shared
 
     let surfaceView: Ghostty.SurfaceView
@@ -134,6 +153,11 @@ private struct TerminalSplitLeaf: View {
     @State private var isSelfDragging: Bool = false
     /// 0 → 1 as the focus sweep travels down a pane that just took focus.
     @State private var sweep: CGFloat = 1
+    /// How lit the focus chrome is: 0 off, 1 on. Springs a little past 1 as it lands.
+    @State private var lit: CGFloat = 0
+    /// When the last scan started, so two triggers at once (a new tab is both new and
+    /// switched to) play one scan instead of restarting it halfway down.
+    @State private var sweepStarted = Date.distantPast
     /// Bumped when tab colors are reshuffled, so the tint is read again.
     @State private var colorEpoch = 0
 
@@ -157,7 +181,8 @@ private struct TerminalSplitLeaf: View {
                     tag: SignalText.paneLetter(order.firstIndex(of: ObjectIdentifier(surfaceView)) ?? 0),
                     focused: focused,
                     tint: tint,
-                    foreground: Color(nsColor: theme.foreground))
+                    foreground: Color(nsColor: theme.foreground),
+                    cornerInset: signal && settings.focusCorners ? radius : 0)
             }
             GeometryReader { geometry in
                 Ghostty.InspectableSurface(
@@ -192,10 +217,13 @@ private struct TerminalSplitLeaf: View {
             }
         }
         .background {
-            // Keeps the command-block overlay on this pane's terminal. Draws nothing itself.
+            // Keeps the command-block and Signal cursor overlay on this pane's terminal. Draws nothing itself.
             SignalBlockAttachment(
                 surfaceView: surfaceView,
-                enabled: settings.showsCommandBlocks,
+                enabled: settings.showsCommandBlocks || settings.isSignal,
+                showsBlocks: settings.showsCommandBlocks,
+                showsCursor: settings.isSignal,
+                animateCursor: settings.animations,
                 tint: NSColor(tint),
                 foreground: theme.foreground,
                 background: theme.background,
@@ -218,24 +246,22 @@ private struct TerminalSplitLeaf: View {
                     .strokeBorder(
                         focused ? tint.opacity(signal ? 0.42 : 0.7) : Color.primary.opacity(signal ? 0.08 : 0.12),
                         lineWidth: focused || signal ? 1 : 0.5)
+                    .animation(Self.moves(settings) ? .easeOut(duration: 0.3) : nil, value: focused)
                     .allowsHitTesting(false)
             }
         }
         .overlay {
-            if signal && focused {
+            if signal {
                 SignalFocusChrome(
-                    shape: shape, radius: radius, tint: tint, sweep: sweep,
+                    shape: shape, radius: radius, tint: tint, lit: lit, sweep: sweep,
                     glow: settings.focusGlow, corners: settings.focusCorners)
             }
         }
+        .onAppear {
+            lit = focused ? 1 : 0
+        }
         .onChange(of: focused) { nowFocused in
-            guard nowFocused, signal, settings.animations,
-                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-            // Restart from the top on the next runloop turn, so the reset itself is not animated.
-            sweep = 0
-            DispatchQueue.main.async {
-                withAnimation(.easeOut(duration: 0.7)) { sweep = 1 }
-            }
+            light(nowFocused, settings)
         }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyXTabColorsDidShuffle)) { _ in
             colorEpoch += 1
@@ -244,10 +270,46 @@ private struct TerminalSplitLeaf: View {
         .accessibilityLabel("Terminal pane")
     }
 
+    // MARK: Signal motion
+    //
+    // Focusing a pane (a click, a new split) brightens its outline and glow (.3s), flies its
+    // corner brackets in (.4s, small overshoot) and runs the scan down it. Switching or
+    // opening tabs is the window's own sweep (TerminalViewContainer), so it is not doubled
+    // here. Only opacity and offsets animate, which Core Animation runs without redrawing.
+
+    private static func moves(_ settings: TabBarSettings) -> Bool {
+        settings.isSignal && settings.animations && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    private func light(_ on: Bool, _ settings: TabBarSettings) {
+        guard Self.moves(settings) else {
+            lit = on ? 1 : 0
+            return
+        }
+        withAnimation(on ? .spring(response: 0.42, dampingFraction: 0.68) : .easeOut(duration: 0.22)) {
+            lit = on ? 1 : 0
+        }
+        if on { runSweep() }
+    }
+
+    private func runSweep() {
+        let now = Date()
+        guard now.timeIntervalSince(sweepStarted) > 0.25 else { return }
+        sweepStarted = now
+        // Back to the top without animating, then the scan on the next turn, so the
+        // reset has been drawn before it starts.
+        var reset = Transaction()
+        reset.disablesAnimations = true
+        withTransaction(reset) { sweep = 0 }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.75)) { sweep = 1 }
+        }
+    }
+
     /// The window's Signal tint. Taking the epoch makes the body depend on it, so a tab
     /// color change re-evaluates the tint.
     private func signalTint(_ theme: RoundedTabTheme, _ settings: TabBarSettings, epoch: Int) -> Color {
-        Color(nsColor: theme.signal(for: surfaceView.window, settings: settings))
+        Color(nsColor: wallpaperAccent ?? theme.signal(for: surfaceView.window, settings: settings))
     }
 
     private enum DropState: Equatable {
@@ -376,13 +438,6 @@ enum TerminalSplitDropZone: String, Equatable {
     }
 }
 
-/// The tint of the window a subtree lives in, for the divider handle.
-@MainActor
-private func dividerTint(of node: SplitTree<Ghostty.SurfaceView>.Node) -> Color {
-    let settings = TabBarSettingsStore.shared.settings
-    return Color(nsColor: RoundedTabTheme.current.signal(for: node.leftmostLeaf().window, settings: settings))
-}
-
 /// Ghostty X: the strip above a pane in Signal windows — its letter, title, directory and
 /// size in cells. While the pointer is over it: copy the last command's output, list recent
 /// commands, split, and close.
@@ -397,6 +452,9 @@ private struct SignalPaneHeader: View {
     let focused: Bool
     let tint: Color
     let foreground: Color
+    /// The pane's corner radius when its corners carry focus brackets: the strip's ends
+    /// keep clear of them, so its letter and buttons never sit on a bracket.
+    var cornerInset: CGFloat = 0
 
     @State private var title = ""
     @State private var path = ""
@@ -452,8 +510,9 @@ private struct SignalPaneHeader: View {
             }
         }
         .font(.system(size: 10.5, design: .monospaced))
-        .padding(.leading, 13)
-        .padding(.trailing, 7)
+        .padding(.leading, max(13, cornerInset + 6))
+        .padding(.trailing, max(7, cornerInset + 8))
+        .animation(.easeOut(duration: 0.3), value: focused)
         .frame(maxWidth: .infinity)
         .frame(height: TabBarSettings.paneHeaderHeight)
         .background(ghostty.config.splitGutterColor)
@@ -517,74 +576,98 @@ extension Ghostty.SurfaceView {
 }
 
 /// Ghostty X: what marks the focused pane in Signal windows — a soft glow on its outline,
-/// bright corner brackets, and a sweep that runs down the pane when it takes focus.
+/// bright corner brackets, and a scan that runs down the pane when it takes focus.
+///
+/// Nothing here is redrawn while it moves: the glow is blurred once and faded, the
+/// brackets are drawn once and slid, the scan is one gradient that is slid. `lit` and
+/// `sweep` only drive opacity and offsets, which Core Animation interpolates.
 private struct SignalFocusChrome: View {
     let shape: RoundedRectangle
     let radius: CGFloat
     let tint: Color
+    let lit: CGFloat
     let sweep: CGFloat
     let glow: Bool
     let corners: Bool
 
     var body: some View {
+        let shown = Double(min(max(lit, 0), 1))
+        // Past 1 (the spring's overshoot) the brackets tuck a touch inside, then settle.
+        let out = (1 - lit) * 7
         ZStack {
             if glow {
                 shape
                     .stroke(tint.opacity(0.55), lineWidth: 2)
                     .blur(radius: 7)
+                    .opacity(shown)
             }
-            if sweep < 1 {
-                GeometryReader { geometry in
-                    LinearGradient(
-                        colors: [tint.opacity(0), tint.opacity(0.14), tint.opacity(0.6)],
-                        startPoint: .top, endPoint: .bottom)
-                    .frame(height: 70)
-                    .offset(y: -70 + sweep * (geometry.size.height + 70))
-                    .opacity(Double(1 - sweep))
-                }
-                .clipShape(shape)
+            GeometryReader { geometry in
+                LinearGradient(
+                    colors: [tint.opacity(0), tint.opacity(0.13), tint.opacity(0.7)],
+                    startPoint: .top, endPoint: .bottom)
+                .frame(height: 70)
+                .offset(y: -70 + sweep * (geometry.size.height + 70))
             }
+            .opacity(Double(1 - sweep))
+            .clipShape(shape)
             if corners {
-                PaneCornerBrackets(radius: radius, length: 13)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    .shadow(color: tint.opacity(0.9), radius: 3)
+                ZStack {
+                    ForEach(PaneCorner.allCases, id: \.self) { corner in
+                        PaneCornerBracket(corner: corner, radius: radius, length: 13)
+                            .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                            .offset(x: corner.dx * out, y: corner.dy * out)
+                    }
+                }
+                .shadow(color: tint.opacity(0.9), radius: 3)
+                .opacity(min(1, shown * 1.6))
             }
         }
         .allowsHitTesting(false)
     }
 }
 
-/// Short arcs at a pane's four corners.
-private struct PaneCornerBrackets: Shape {
+private enum PaneCorner: CaseIterable {
+    case topLeft, topRight, bottomRight, bottomLeft
+
+    /// Which way the corner points, outward from the pane.
+    var dx: CGFloat { self == .topLeft || self == .bottomLeft ? -1 : 1 }
+    var dy: CGFloat { self == .topLeft || self == .topRight ? -1 : 1 }
+}
+
+/// A short arc at one of a pane's corners, on its outline.
+private struct PaneCornerBracket: Shape {
+    let corner: PaneCorner
     let radius: CGFloat
     let length: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        // Inset by half the stroke so the brackets sit on the pane's outline.
+        // Inset by half the stroke so the bracket sits on the pane's outline.
         let rect = rect.insetBy(dx: 1, dy: 1)
         let r = max(0, min(radius - 1, rect.width / 2, rect.height / 2))
         let l = min(max(length, r), rect.width / 2, rect.height / 2)
         var path = Path()
-        // Top left
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY + l))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX + l, y: rect.minY))
-        // Top right
-        path.move(to: CGPoint(x: rect.maxX - l, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + l))
-        // Bottom right
-        path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - l))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - l, y: rect.maxY))
-        // Bottom left
-        path.move(to: CGPoint(x: rect.minX + l, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - l))
+        switch corner {
+        case .topLeft:
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY + l))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.minX + l, y: rect.minY))
+        case .topRight:
+            path.move(to: CGPoint(x: rect.maxX - l, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + l))
+        case .bottomRight:
+            path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - l))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.maxX - l, y: rect.maxY))
+        case .bottomLeft:
+            path.move(to: CGPoint(x: rect.minX + l, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - l))
+        }
         return path
     }
 }
@@ -624,6 +707,9 @@ extension Ghostty.Config {
 private struct SignalBlockAttachment: NSViewRepresentable {
     let surfaceView: Ghostty.SurfaceView
     let enabled: Bool
+    let showsBlocks: Bool
+    let showsCursor: Bool
+    let animateCursor: Bool
     let tint: NSColor
     let foreground: NSColor
     let background: NSColor
@@ -637,6 +723,9 @@ private struct SignalBlockAttachment: NSViewRepresentable {
             return
         }
         let view = SignalBlockView.attach(to: surfaceView)
+        view.showsBlocks = showsBlocks
+        view.showsCursor = showsCursor
+        view.animateCursor = animateCursor
         view.colors = .init(tint: tint, foreground: foreground, background: background, focused: focused)
     }
 }
@@ -705,6 +794,20 @@ final class SignalBlockView: NSView {
         var chips: [Chip] = []
     }
 
+    /// The terminal cursor, kept apart from the prompt so that a cursor move only moves
+    /// the cursor layer and does not redraw the blocks.
+    private struct Cursor: Equatable {
+        var row = -1
+        var col = -1
+        /// 0 bar, 1 block, 2 block_hollow, 3 underline, 4 lock.
+        var style = 0
+        var visible = false
+        var blinking = false
+        var wide = false
+        /// The cell under it holds a character.
+        var overText = false
+    }
+
     /// The Signal palette, for what is drawn over text the shell colors from it.
     private enum Ink {
         static let blue = NSColor(srgbRed: 0.353, green: 0.722, blue: 1, alpha: 1)
@@ -758,17 +861,29 @@ final class SignalBlockView: NSView {
     static var liveCount: Int { entries.count }
     private static let fastInterval: TimeInterval = 1.0 / 60
     private static let slowInterval: TimeInterval = 0.25
+    private static let cursorIdleInterval: TimeInterval = 0.1
     /// How long the view keeps asking quickly after the last change it saw.
     private static let settleTime: TimeInterval = 1.2
     private static let maxBlocks = 64
 
-    var colors = Colors() { didSet { if colors != oldValue { needsDisplay = true } } }
+    var colors = Colors() {
+        didSet {
+            guard colors != oldValue else { return }
+            needsDisplay = true
+            updateCursorLayer(forceSnap: true)
+            if colors.focused != oldValue.focused { wake(now: true) }
+        }
+    }
+    var showsBlocks = true { didSet { if showsBlocks != oldValue { needsDisplay = true } } }
+    var showsCursor = false { didSet { if showsCursor != oldValue { updateCursorLayer(forceSnap: true) } } }
+    var animateCursor = true { didSet { if animateCursor != oldValue { updateCursorLayer(forceSnap: true) } } }
 
     private weak var surfaceView: Ghostty.SurfaceView?
     private var buffer = [ghostty_block_s](repeating: ghostty_block_s(), count: SignalBlockView.maxBlocks)
     private var blocks: [Block] = []
     private var metrics = Metrics()
     private var prompt = Prompt()
+    private var cursor = Cursor()
     /// The block that was just folded or opened shows it for a moment, so the eye finds
     /// what changed and which way it went: the row of its command line, how much of the
     /// moment is left (1 down to 0), whether it was opened, and the count from the core
@@ -803,6 +918,13 @@ final class SignalBlockView: NSView {
     private var lastChange = Date.distantPast
     private var observers: [NSObjectProtocol] = []
 
+    /// The Signal cursor: a glow under a crisp core, blinking as one.
+    private let cursorContainer = CALayer()
+    private let cursorGlowLayer = CALayer()
+    private let cursorCoreLayer = CALayer()
+    private var lastCursorGrid: (row: Int, col: Int)?
+    private var lastCursorStyle = -1
+
     // MARK: Attaching
 
     /// The overlay for a surface, created and placed over it if it has none.
@@ -827,7 +949,10 @@ final class SignalBlockView: NSView {
         self.surfaceView = surfaceView
         super.init(frame: surfaceView.frame)
         wantsLayer = true
+        clipsToBounds = true
+        layer?.masksToBounds = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        setupCursorLayers()
         addTrackingArea(NSTrackingArea(
             rect: .zero,
             options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
@@ -848,6 +973,23 @@ final class SignalBlockView: NSView {
                 // A surface that has gone away takes its overlay with it.
                 guard self.surfaceView != nil else { self.teardown(); return }
                 if (note.object as? NSWindow) === self.window { self.wake(now: true) }
+            }
+        })
+        observers.append(center.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, (note.object as? NSWindow) === self.window else { return }
+                self.updateCursorLayer(forceSnap: true)
+                self.wake(now: true)
+            }
+        })
+        observers.append(center.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, (note.object as? NSWindow) === self.window else { return }
+                self.updateCursorLayer(forceSnap: true)
             }
         })
         Self.watchEvents()
@@ -886,6 +1028,13 @@ final class SignalBlockView: NSView {
         } else if event.type == .keyDown, !hasKeyboard {
             // A key goes to one pane. The others keep their slow pace.
         } else {
+            if event.type == .keyDown, hasKeyboard, showsCursor {
+                restartCursorBlink()
+                // The echo usually lands within a frame; look once early so the cursor keeps up.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.008) { [weak self] in
+                    self?.refresh()
+                }
+            }
             wake()
         }
         return false
@@ -900,6 +1049,10 @@ final class SignalBlockView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        layer?.masksToBounds = true
+        let scale = window?.backingScaleFactor ?? 2
+        for sub in [cursorContainer, cursorGlowLayer, cursorCoreLayer] { sub.contentsScale = scale }
+        updateCursorLayer(forceSnap: true)
         wake(now: true)
     }
 
@@ -910,12 +1063,15 @@ final class SignalBlockView: NSView {
             host.addSubview(self, positioned: .above, relativeTo: surfaceView)
         }
         if frame != surfaceView.frame { frame = surfaceView.frame }
+        layer?.masksToBounds = true
         wake(now: true)
     }
 
     private func teardown() {
         timer?.invalidate()
         timer = nil
+        cursorContainer.removeAllAnimations()
+        cursorGlowLayer.removeAllAnimations()
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers = []
         flashMotion.stop()
@@ -1129,6 +1285,7 @@ final class SignalBlockView: NSView {
         }
 
         let marked = geometry.prompt.chips
+        let cflags = geometry.prompt.cursor_flags
         let nextPrompt = Prompt(
             style: Int(geometry.prompt.style),
             pointerRow: Int(geometry.prompt.pointer_row), pointerCol: Int(geometry.prompt.pointer_col),
@@ -1136,6 +1293,11 @@ final class SignalBlockView: NSView {
             chips: [marked.0, marked.1, marked.2, marked.3, marked.4, marked.5]
                 .prefix(Int(min(geometry.prompt.count, 6)))
                 .map { Chip(row: Int($0.row), start: Int($0.start), end: Int($0.end), kind: Int($0.kind)) })
+        let nextCursor = Cursor(
+            row: Int(geometry.prompt.cursor_row), col: Int(geometry.prompt.cursor_col),
+            style: Int(geometry.prompt.cursor_style),
+            visible: cflags & 1 != 0, blinking: cflags & 2 != 0,
+            wide: cflags & 4 != 0, overText: cflags & 8 != 0)
 
         // A fold or an opening since the last look: light that block briefly. The first
         // look only learns the count, so nothing flashes when a pane appears.
@@ -1164,16 +1326,25 @@ final class SignalBlockView: NSView {
             closePeek()
         }
 
-        if next != blocks || nextMetrics != metrics || nextPrompt != prompt {
+        let layoutChanged = next != blocks || nextMetrics != metrics || nextPrompt != prompt
+        if layoutChanged {
             blocks = next
             metrics = nextMetrics
             prompt = nextPrompt
             layoutBlocks()
-            lastChange = Date()
             needsDisplay = true
         }
-        // Still for a while: ask rarely until something wakes the view.
-        let wanted = Date().timeIntervalSince(lastChange) > Self.settleTime ? Self.slowInterval : Self.fastInterval
+        if layoutChanged || nextCursor != cursor {
+            let cursorMoved = nextCursor.row != cursor.row || nextCursor.col != cursor.col
+            cursor = nextCursor
+            updateCursorLayer(forceSnap: false, cursorMoved: cursorMoved)
+            lastChange = Date()
+        }
+        // Still for a while: ask rarely until something wakes the view. The pane that
+        // draws the cursor asks a little more often, so output a program prints moves
+        // the cursor without a visible lag.
+        let idle = showsCursor && colors.focused && window.isKeyWindow ? Self.cursorIdleInterval : Self.slowInterval
+        let wanted = Date().timeIntervalSince(lastChange) > Self.settleTime ? idle : Self.fastInterval
         schedule(wanted)
     }
 
@@ -1194,12 +1365,36 @@ final class SignalBlockView: NSView {
         for block in blocks where block.has(Flag.live) || !block.has(Flag.empty) {
             // The command deck is roomier than a finished block.
             let inner = block.has(Flag.live) ? (cell * 0.38).rounded() : pad
-            var y0 = metrics.top + CGFloat(block.top) * cell - (block.has(Flag.padAbove) ? inner : 1)
-            var y1 = metrics.top + CGFloat(block.bottom + 1) * cell + (block.has(Flag.padBelow) ? inner : 1)
-            // A block that runs past the view has no edge there.
-            if block.has(Flag.clippedTop) { y0 = -12 }
-            if block.has(Flag.clippedBottom) { y1 = metrics.size.height + 12 }
-            let box = NSRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+            var above = block.has(Flag.padAbove) ? inner : 1
+            var below = block.has(Flag.padBelow) ? inner : 1
+            if !block.has(Flag.live), block.top == block.bottom,
+               !block.has(Flag.clippedTop), !block.has(Flag.clippedBottom) {
+                // Keep the text, caret and controls on the middle of a one-row card.
+                let inset = min(above, below)
+                above = inset
+                below = inset
+            }
+            var y0 = metrics.top + CGFloat(block.top) * cell - above
+            var y1 = metrics.top + CGFloat(block.bottom + 1) * cell + below
+            // A block that runs past the view has no edge there (clipped at view bounds).
+            if block.has(Flag.clippedTop) {
+                y0 = -12
+            } else {
+                y0 = max(1, y0)
+            }
+            if block.has(Flag.clippedBottom) {
+                y1 = metrics.size.height + 12
+            } else if metrics.size.height > y0 + 4 {
+                y1 = min(metrics.size.height - 1, y1)
+            }
+            // Keep adjacent boxes from ever overlapping or touching.
+            if let last = items.indices.last, y0 < items[last].box.maxY + 3 {
+                let mid = ((items[last].box.maxY + y0) / 2).rounded()
+                let prevMax = max(items[last].box.minY + 4, mid - 1.5)
+                items[last].box.size.height = prevMax - items[last].box.minY
+                y0 = max(y0, prevMax + 3)
+            }
+            let box = NSRect(x: x0, y: y0, width: x1 - x0, height: max(4, y1 - y0))
             if block.has(Flag.live) {
                 // Only the card look has a box here. The others are drawn from the marks.
                 if prompt.style == 0 {
@@ -1227,6 +1422,8 @@ final class SignalBlockView: NSView {
     }
 
     private func hit(at point: NSPoint) -> Hit? {
+        // With blocks hidden (the cursor alone is on), their buttons are not there.
+        guard showsBlocks else { return nil }
         for (index, item) in items.enumerated() where !item.isDeck {
             if item.copy.contains(point) { return Hit(block: index, action: .copy) }
             if let toggle = item.toggle, toggle.contains(point) { return Hit(block: index, action: .toggle) }
@@ -1236,7 +1433,7 @@ final class SignalBlockView: NSView {
 
     private func updateHover(at point: NSPoint?) {
         let nextButton = point.flatMap { hit(at: $0) }
-        let nextBlock = point.flatMap { point in items.firstIndex { !$0.isDeck && $0.box.contains(point) } }
+        let nextBlock = showsBlocks ? point.flatMap { point in items.firstIndex { !$0.isDeck && $0.box.contains(point) } } : nil
         guard nextButton != hover || nextBlock != hoverBlock else { return }
         hover = nextButton
         hoverBlock = nextBlock
@@ -1380,10 +1577,182 @@ final class SignalBlockView: NSView {
         }
     }
 
+    // MARK: Signal Cursor
+
+    private static let cursorBlinkKey = "signalCursorBlink"
+    private static let cursorGlowKey = "signalCursorGlow"
+
+    private func setupCursorLayers() {
+        guard let root = layer else { return }
+        cursorContainer.zPosition = 10
+        cursorContainer.isHidden = true
+        cursorContainer.masksToBounds = false
+        cursorGlowLayer.masksToBounds = false
+        cursorGlowLayer.shadowOffset = .zero
+        cursorContainer.addSublayer(cursorGlowLayer)
+        cursorContainer.addSublayer(cursorCoreLayer)
+        root.addSublayer(cursorContainer)
+    }
+
+    /// Snaps to half points, so edges land on whole pixels on a Retina screen.
+    private static func crisp(_ value: CGFloat) -> CGFloat { (value * 2).rounded() / 2 }
+
+    /// Where the cursor goes, in the view, and its style; nil when it is not drawn here.
+    /// Only the focused pane of the key window draws it: the core draws the others hollow.
+    private func cursorGeometry() -> (rect: NSRect, style: Int)? {
+        guard showsCursor,
+              colors.focused,
+              window?.isKeyWindow == true,
+              cursor.visible,
+              cursor.row >= 0,
+              cursor.col >= 0,
+              metrics.cellWidth > 0,
+              metrics.cellHeight > 0 else { return nil }
+
+        let cellW = metrics.cellWidth
+        let cellH = metrics.cellHeight
+        let span = CGFloat(cursor.wide ? 2 : 1) * cellW
+        let x = colX(cursor.col)
+        let y = rowY(cursor.row)
+        let rect: NSRect
+        switch cursor.style {
+        case 1, 2:
+            // The whole cell, a hair in from its edges so neighbours stay clear.
+            rect = NSRect(x: x + 0.5, y: y + 1, width: max(4, span - 1), height: max(8, cellH - 2))
+        case 3:
+            let h = max(2, (cellH * 0.12).rounded())
+            rect = NSRect(x: x + 0.5, y: y + cellH - h - 1, width: max(4, span - 1), height: h)
+        default:
+            // Bar (and the password lock): a full-height pill on the cell's left edge.
+            let w = max(3, min(4, (cellW * 0.34).rounded()))
+            rect = NSRect(x: max(1, x - w / 2), y: y + 1, width: w, height: max(8, cellH - 2))
+        }
+        let snapped = NSRect(
+            x: Self.crisp(rect.minX), y: Self.crisp(rect.minY),
+            width: Self.crisp(rect.width), height: Self.crisp(rect.height))
+        return (snapped, cursor.style)
+    }
+
+    private func updateCursorLayer(forceSnap: Bool, cursorMoved: Bool = false) {
+        if cursorContainer.superlayer == nil, let root = layer {
+            root.addSublayer(cursorContainer)
+        }
+        guard let (rect, style) = cursorGeometry() else {
+            guard !cursorContainer.isHidden else { return }
+            cursorContainer.removeAllAnimations()
+            cursorGlowLayer.removeAllAnimations()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            cursorContainer.isHidden = true
+            CATransaction.commit()
+            lastCursorGrid = nil
+            lastCursorStyle = -1
+            return
+        }
+
+        let tint = style == 4 ? Ink.yellow : colors.tint
+        let bright = tint.blended(withFraction: 0.35, of: .white) ?? tint
+        let bounds = CGRect(origin: .zero, size: rect.size)
+        let radius: CGFloat = switch style {
+        case 1, 2: 2
+        default: min(rect.width, rect.height) / 2
+        }
+        let shape = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+
+        // A short hop along the line glides; anything else lands at once.
+        let wasHidden = cursorContainer.isHidden
+        let shortHop = lastCursorGrid.map { $0.row == cursor.row && abs($0.col - cursor.col) <= 4 } ?? false
+        let glide = !forceSnap && !wasHidden && shortHop && lastCursorStyle == style
+            && animateCursor && !RoundedTerminalTabBar.reduceMotion
+
+        CATransaction.begin()
+        if glide {
+            CATransaction.setAnimationDuration(0.06)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.2, 0.85, 0.2, 1))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        cursorContainer.isHidden = false
+        cursorContainer.frame = rect
+        cursorGlowLayer.frame = bounds
+        cursorCoreLayer.frame = bounds
+        cursorCoreLayer.cornerRadius = radius
+        cursorGlowLayer.shadowColor = tint.cgColor
+
+        switch style {
+        case 1 where !cursor.overText:
+            // An empty cell: the solid glowing block of the Signal design.
+            cursorGlowLayer.shadowPath = shape
+            cursorGlowLayer.shadowOpacity = 0.85
+            cursorCoreLayer.backgroundColor = tint.withAlphaComponent(0.95).cgColor
+            cursorCoreLayer.borderWidth = 0
+        case 1:
+            // Over a character: tinted glass with a bright rim, so the glyph still reads.
+            cursorGlowLayer.shadowPath = shape
+            cursorGlowLayer.shadowOpacity = 0.6
+            cursorCoreLayer.backgroundColor = tint.withAlphaComponent(0.4).cgColor
+            cursorCoreLayer.borderWidth = 1.25
+            cursorCoreLayer.borderColor = bright.cgColor
+        case 2:
+            cursorGlowLayer.shadowPath = shape.copy(strokingWithWidth: 1.5, lineCap: .round, lineJoin: .round, miterLimit: 1)
+            cursorGlowLayer.shadowOpacity = 0.6
+            cursorCoreLayer.backgroundColor = NSColor.clear.cgColor
+            cursorCoreLayer.borderWidth = 1.5
+            cursorCoreLayer.borderColor = tint.withAlphaComponent(0.9).cgColor
+        default:
+            cursorGlowLayer.shadowPath = shape
+            cursorGlowLayer.shadowOpacity = 0.9
+            cursorCoreLayer.backgroundColor = bright.cgColor
+            cursorCoreLayer.borderWidth = 0
+        }
+        if cursorGlowLayer.animation(forKey: Self.cursorGlowKey) == nil {
+            cursorGlowLayer.shadowRadius = 12
+        }
+        CATransaction.commit()
+
+        let styleChanged = lastCursorStyle != style
+        lastCursorGrid = (cursor.row, cursor.col)
+        lastCursorStyle = style
+
+        if cursorMoved || forceSnap || styleChanged || wasHidden {
+            restartCursorBlink()
+        }
+    }
+
+    /// Starts the blink over from its lit half: typing and moving keep the cursor solid,
+    /// as in the design, and it only starts to fade once things are still.
+    private func restartCursorBlink() {
+        cursorContainer.removeAnimation(forKey: Self.cursorBlinkKey)
+        cursorGlowLayer.removeAnimation(forKey: Self.cursorGlowKey)
+        guard !cursorContainer.isHidden, cursor.blinking, animateCursor,
+              !RoundedTerminalTabBar.reduceMotion else { return }
+
+        // The design's blink: lit for half the beat, an ease down to a faint ember, and
+        // back. The glow pulls in as it dims and blooms again as it relights.
+        let times: [NSNumber] = [0, 0.5, 0.65, 0.9, 1]
+        let ease = CAMediaTimingFunction(name: .easeInEaseOut)
+
+        let blink = CAKeyframeAnimation(keyPath: "opacity")
+        blink.values = [1, 1, 0.18, 0.18, 1]
+        blink.keyTimes = times
+        blink.timingFunctions = Array(repeating: ease, count: 4)
+        blink.duration = 1.2
+        blink.repeatCount = .infinity
+        cursorContainer.add(blink, forKey: Self.cursorBlinkKey)
+
+        let glow = CAKeyframeAnimation(keyPath: "shadowRadius")
+        glow.values = [12, 12, 3, 3, 12]
+        glow.keyTimes = times
+        glow.timingFunctions = Array(repeating: ease, count: 4)
+        glow.duration = 1.2
+        glow.repeatCount = .infinity
+        cursorGlowLayer.add(glow, forKey: Self.cursorGlowKey)
+    }
+
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        guard bounds.width >= 2, bounds.height >= 2 else { return }  // see RoundedTerminalTabBar.draw
+        guard bounds.width >= 2, bounds.height >= 2, showsBlocks else { return }  // see RoundedTerminalTabBar.draw
         defer { drawPromptMarks() }
         guard !items.isEmpty else { return }
         let line = colors.foreground
@@ -2174,7 +2543,6 @@ final class SignalBlockView: NSView {
         path.stroke()
     }
 }
-
 
 /// A folded block's output, shown over the pane by its command line.
 ///

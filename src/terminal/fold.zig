@@ -683,6 +683,13 @@ pub const PromptInfo = extern struct {
     /// 1 while the shell is at a prompt on the plain screen: the moment blocks can be
     /// folded, and the moment the app's block keys are its own.
     ready: u32 = 0,
+    /// Cursor position in viewport cells (-1 when offscreen), style (0 bar, 1 block,
+    /// 2 hollow block, 3 underline, 4 lock), and flags (1 visible, 2 blinking, 4 wide,
+    /// 8 the cell under it holds text).
+    cursor_row: i32 = -1,
+    cursor_col: i32 = -1,
+    cursor_style: u32 = 0,
+    cursor_flags: u32 = 0,
     chips: [6]Chip = @splat(.{}),
 };
 
@@ -734,6 +741,29 @@ const max_view_rows = 512;
 /// rows in view, so it is cheap enough to call as the view changes.
 pub fn viewportBlocks(t: *Terminal, out: []BlockInfo, prompt: *PromptInfo) usize {
     prompt.* = .{};
+    // Populate cursor state for every screen (including alternate screen / pre-prompt)
+    // so the Signal cursor tracks the terminal cursor cleanly everywhere.
+    {
+        const active_screen: *Screen = t.screens.active;
+        if (active_screen.pages.pointFromPin(.viewport, active_screen.cursor.page_pin.*)) |pt| {
+            const cell_wide = active_screen.cursor.page_cell.wide;
+            const cx: usize = if (cell_wide == .spacer_tail) pt.viewport.x -| 1 else pt.viewport.x;
+            prompt.cursor_row = @intCast(pt.viewport.y);
+            prompt.cursor_col = @intCast(cx);
+            var cflags: u32 = 0;
+            if (t.modes.get(.cursor_visible)) cflags |= 1;
+            if (t.modes.get(.cursor_blinking)) cflags |= 2;
+            if (cell_wide == .wide or cell_wide == .spacer_tail) cflags |= 4;
+            if (cflags & 4 != 0 or active_screen.cursor.page_cell.hasText()) cflags |= 8;
+            prompt.cursor_flags = cflags;
+            prompt.cursor_style = if (t.flags.password_input) 4 else switch (active_screen.cursor.cursor_style) {
+                .bar => 0,
+                .block => 1,
+                .block_hollow => 2,
+                .underline => 3,
+            };
+        }
+    }
     if (out.len == 0) return 0;
     if (t.screens.active_key != .primary) return 0;
     const screen: *Screen = t.screens.active;
@@ -803,11 +833,17 @@ pub fn viewportBlocks(t: *Terminal, out: []BlockInfo, prompt: *PromptInfo) usize
         if (top.up(1) != null) {
             var bottom = e - 1;
             while (bottom > 0 and kind[bottom] & has_text == 0) bottom -= 1;
-            if (kind[bottom] & has_text != 0) {
-                var f: u32 = flags.clipped_top | flags.has_output;
+            const has_text_out = kind[bottom] & has_text != 0;
+            const holds_cursor = if (cursor_row) |c| c < e else false;
+            if (!at_prompt and holds_cursor) {
+                bottom = @max(bottom, cursor_row.?);
+            }
+            if (has_text_out or (!at_prompt and holds_cursor)) {
+                var f: u32 = flags.clipped_top;
+                if (has_text_out) f |= flags.has_output;
                 if (bottom + 1 < rows and kind[bottom + 1] & has_text == 0) f |= flags.pad_below;
                 if (e == rows and bottom == rows - 1) f |= flags.clipped_bottom;
-                if (!at_prompt and e == rows) f |= flags.running;
+                if (!at_prompt and (holds_cursor or e == rows)) f |= flags.running;
                 // It can be folded from here, without scrolling back to its command
                 // line first: that line is brought down into view by the fold.
                 if (at_prompt and rewritable and e > active_from) f |= flags.can_toggle;
@@ -846,6 +882,15 @@ pub fn viewportBlocks(t: *Terminal, out: []BlockInfo, prompt: *PromptInfo) usize
         if (at_prompt and holds_cursor) f |= flags.live;
         const last = e == rows;
         if (!at_prompt and (holds_cursor or (last and cursor_row == null))) f |= flags.running;
+
+        // Keep the cursor inside its live or running block even on a trailing blank line.
+        if ((f & (flags.live | flags.running)) != 0 and holds_cursor) {
+            if (cursor_row) |c| {
+                if (c < box_top) box_top = c;
+                if (c > bottom) bottom = c;
+            }
+        }
+
         if (last and bottom == rows - 1 and f & flags.live == 0) f |= flags.clipped_bottom;
 
         if (box_top > 0 and kind[box_top - 1] & has_text == 0) f |= flags.pad_above;

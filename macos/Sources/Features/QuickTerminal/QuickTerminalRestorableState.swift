@@ -15,6 +15,10 @@ struct QuickTerminalRestorableState: TerminalRestorable {
         internalState.screenStateEntries
     }
 
+    var position: QuickTerminalPosition? {
+        internalState.position
+    }
+
     private let internalState: InternalState<Ghostty.SurfaceView>
 
     init(from controller: QuickTerminalController) {
@@ -44,6 +48,7 @@ extension QuickTerminalRestorableState {
         let focusedSurface: String?
         let surfaceTree: SplitTree<ViewType>
         let screenStateEntries: QuickTerminalScreenStateCache.Entries
+        var position: QuickTerminalPosition?
     }
 }
 
@@ -53,6 +58,7 @@ extension QuickTerminalRestorableState.InternalState where ViewType == Ghostty.S
             focusedSurface: controller.focusedSurface?.id.uuidString,
             surfaceTree: controller.surfaceTree,
             screenStateEntries: controller.screenStateCache.stateByDisplay,
+            position: controller.position,
         )
     }
 }

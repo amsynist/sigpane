@@ -2832,7 +2832,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 );
 
                 // If the cursor is visible then we set our uniforms.
-                if (style == .block) {
+                if (style == .block and (!self.focused or self.config.cursor_opacity > 0)) {
                     const wide = state.cursor.cell.wide;
 
                     self.uniforms.cursor_pos = .{

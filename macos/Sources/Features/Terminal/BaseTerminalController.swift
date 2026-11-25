@@ -59,6 +59,8 @@ class BaseTerminalController: NSWindowController,
     /// Set if the terminal view should show the update overlay.
     @Published var updateOverlayIsVisible: Bool = false
 
+    @Published var wallpaperSignalAccent: NSColor?
+
     /// True when any surface in this controller currently has an active bell.
     @Published private(set) var bell: Bool = false
 

@@ -4,16 +4,16 @@ Ghostty X is a macOS appearance fork of Ghostty. Its default Signal interface
 adds session cards, a focus trace around split panes, and command blocks you
 can fold and copy inside the terminal.
 
-[![Ghostty X Signal live walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/0dc5a6353f5020f0399a4e86f3d7aaf2af3397b9/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/0dc5a6353f5020f0399a4e86f3d7aaf2af3397b9/signal/4k/signal-walkthrough.mp4)
+[![Ghostty X Signal live walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/278ab3c5f3f8b8f162d2070ded61dd77ecf252d8/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/278ab3c5f3f8b8f162d2070ded61dd77ecf252d8/signal/4k/signal-walkthrough.mp4)
 
-[Watch the live walkthrough (20 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/0dc5a6353f5020f0399a4e86f3d7aaf2af3397b9/signal/4k/signal-walkthrough.mp4) ·
+[Watch the live walkthrough (22 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/278ab3c5f3f8b8f162d2070ded61dd77ecf252d8/signal/4k/signal-walkthrough.mp4) ·
 [Download the offline HTML walkthrough (ZIP)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough-html.zip)
 
-The live walkthrough and agent-activity captures run `GhosttyX.app` with
-translucent blurred glass over the teal cutting-mat wallpaper, alongside the
-3840 × 2496 layout and prompt close-ups below. Select any image to open the
-full capture, or open the downloaded HTML file to jump directly to any tab
-position, prompt style, or command-block action.
+The live walkthrough and native lossless 3324 × 2120 agent-activity captures
+run `GhosttyX.app` with translucent blurred glass over the teal cutting-mat
+wallpaper, alongside the 3840 × 2496 layout and prompt close-ups below. Select
+any image to open the full capture, or open the downloaded HTML file to jump
+directly to any tab position, prompt style, or command-block action.
 
 ## Sidebars and tabs
 

@@ -48,7 +48,7 @@ class RoundedTerminalTabModel: ObservableObject {
         return (choices.isEmpty ? Array(0..<count) : choices).randomElement() ?? 0
     }
 
-    /// Gives every tab in every Ghostty X tab group a new random color.
+    /// Gives every tab in every Sigpane tab group a new random color.
     static func shuffleAllColors() {
         var seen = Set<ObjectIdentifier>()
         for window in NSApp.windows.compactMap({ $0 as? TerminalWindow }) {
@@ -1329,7 +1329,7 @@ final class RoundedTerminalTabBar: NSView {
             approval.target = self
             menu.addItem(approval)
         }
-        let settingsItem = NSMenuItem(title: "Ghostty X Settings…", action: #selector(openSettings), keyEquivalent: "")
+        let settingsItem = NSMenuItem(title: "Sigpane Settings…", action: #selector(openSettings), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
     }

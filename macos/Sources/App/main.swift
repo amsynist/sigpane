@@ -2,7 +2,7 @@ import AppKit
 import Cocoa
 import GhosttyKit
 
-// Ghostty X: started from another Ghostty's shell (directly, or through `open`), this app
+// Sigpane: started from another Ghostty's shell (directly, or through `open`), this app
 // inherits that app's resources directory and would load its shell integration, prompt
 // and themes instead of its own. Keep the variable only when it points inside this bundle.
 if let inherited = getenv("GHOSTTY_RESOURCES_DIR") {

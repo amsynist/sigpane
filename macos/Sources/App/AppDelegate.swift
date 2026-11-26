@@ -246,10 +246,10 @@ class AppDelegate: NSObject,
         // Initial config loading
         ghosttyConfigDidChange(config: ghostty.config)
 
-        // Ghostty X: tab bar appearance lives in its own window with a live preview.
+        // Sigpane: tab bar appearance lives in its own window with a live preview.
         installTabBarSettingsMenuItem()
 
-        // Ghostty X: a scripted walk through the chrome, only when asked for by environment.
+        // Sigpane: a scripted walk through the chrome, only when asked for by environment.
         SignalDemo.runIfRequested()
 
         // Start our update checker.
@@ -1042,11 +1042,11 @@ class AppDelegate: NSObject,
         TabBarSettingsController.shared.show()
     }
 
-    /// Adds the Ghostty X settings window after "Open Config" in the app menu.
+    /// Adds the Sigpane settings window after "Open Config" in the app menu.
     private func installTabBarSettingsMenuItem() {
         guard let openConfig = menuOpenConfig, let menu = openConfig.menu,
               !menu.items.contains(where: { $0.action == #selector(openTabBarSettings(_:)) }) else { return }
-        let item = NSMenuItem(title: "Ghostty X Settings…", action: #selector(openTabBarSettings(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: "Sigpane Settings…", action: #selector(openTabBarSettings(_:)), keyEquivalent: "")
         item.target = self
         item.setImageIfDesired(systemSymbolName: "rectangle.topthird.inset.filled")
         menu.insertItem(item, at: menu.index(of: openConfig) + 1)
@@ -1445,7 +1445,7 @@ extension AppDelegate {
         if controllersNeedConfirmation.count == 1 {
             Task {
                 let response = await controllersNeedConfirmation[0].confirmCloseAsync(
-                    messageText: "Quit Ghostty?",
+                    messageText: "Quit Sigpane?",
                     informativeText: "The terminal still has a running process. If you quit, the process will be killed.",
                     confirmButtonTitle: "Terminate",
                 )
@@ -1479,7 +1479,7 @@ extension AppDelegate {
         Task {
             for controller in controllers {
                 let response = await controller.confirmCloseAsync(
-                    messageText: "Quit Ghostty?",
+                    messageText: "Quit Sigpane?",
                     informativeText: "The terminal still has a running process. If you quit, the process will be killed.",
                     confirmButtonTitle: "Terminate",
                 )

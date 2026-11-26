@@ -12,7 +12,7 @@ struct SplitView<L: View, R: View>: View {
     /// Divider color
     let dividerColor: Color
 
-    /// Ghostty X: when set, a small handle in this color lights up while the divider is hovered.
+    /// Sigpane: when set, a small handle in this color lights up while the divider is hovered.
     let dividerAccent: Color?
 
     /// Minimum increment (in points) that this split can be resized by, in

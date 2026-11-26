@@ -1,4 +1,4 @@
-# Signal Void: colors that match the Ghostty X Signal interface.
+# Signal Void: colors that match the Sigpane Signal interface.
 # Copy this file to ~/.config/ghostty/themes/signal-void, then set `theme = signal-void`.
 # Tab colors are drawn from palette entries 4, 5, 6, 2, 3 and 1.
 palette = 0=#11141d

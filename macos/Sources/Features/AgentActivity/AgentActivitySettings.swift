@@ -38,10 +38,10 @@ struct AgentActivitySettings: View {
                 }
             }
             .disabled(working)
-            .help("Claude Code gives these numbers only to its status line command. Ghostty X records them and then runs the status line you already had.")
+            .help("Claude Code gives these numbers only to its status line command. Sigpane records them and then runs the status line you already had.")
             Toggle("Show the tool and file an agent is using", isOn: $toolDetails)
                 .help("A file's name or a command's first word, never a path, a full command or a prompt. Applies to panes opened from now on.")
-            Text("Start a new CLI session after enabling, and enable again after updating Ghostty X: new versions follow more events. For Codex, review and trust the hooks in /hooks.")
+            Text("Start a new CLI session after enabling, and enable again after updating Sigpane: new versions follow more events. For Codex, review and trust the hooks in /hooks.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let failure {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish Claude Code and Codex lifecycle status to the owning Ghostty X pane."""
+"""Publish Claude Code and Codex lifecycle status to the owning Sigpane pane."""
 
 import argparse
 import fcntl
@@ -357,11 +357,11 @@ def configure(provider, action):
             del hooks[event]
     config.parent.mkdir(parents=True, exist_ok=True)
     atomic_json(config, settings)
-    print(f"{'Enabled' if enabled else 'Disabled'} Ghostty X status in {config}")
+    print(f"{'Enabled' if enabled else 'Disabled'} Sigpane status in {config}")
 
 
 # --- Status line: Claude Code gives context and cost only to its status line command.
-# Ghostty X puts itself in front of whatever command was there, records the numbers, and
+# Sigpane puts itself in front of whatever command was there, records the numbers, and
 # then runs that command so the status line looks exactly as it did.
 
 def original_statusline_path(provider):
@@ -412,7 +412,7 @@ def configure_usage(provider, action):
         keep.unlink(missing_ok=True)
     config.parent.mkdir(parents=True, exist_ok=True)
     atomic_json(config, settings)
-    print(f"{'Enabled' if action == 'usage-enable' else 'Disabled'} Ghostty X usage in {config}")
+    print(f"{'Enabled' if action == 'usage-enable' else 'Disabled'} Sigpane usage in {config}")
 
 
 def statusline(provider):

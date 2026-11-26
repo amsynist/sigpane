@@ -12,7 +12,7 @@ class TerminalViewContainer: NSView {
     private(set) var glassEffectView: NSView?
     private var derivedConfig: DerivedConfig?
 
-    /// Ghostty X: the tab strip when it sits beside the terminal (bottom, left or right).
+    /// Sigpane: the tab strip when it sits beside the terminal (bottom, left or right).
     /// Only windows that draw the custom strip get one; others keep native tabs.
     private(set) var edgeTabs: RoundedTerminalTabBar?
     /// Hairline under the titlebar, separating it from the terminal like the tab bar design.
@@ -21,7 +21,7 @@ class TerminalViewContainer: NSView {
     private var keyObserver: NSObjectProtocol?
     private var terminalInsets: [NSLayoutConstraint] = []
 
-    /// Ghostty X Signal chrome: the trace from the selected sidebar tab to the focused
+    /// Sigpane Signal chrome: the trace from the selected sidebar tab to the focused
     /// pane, and the status line under the terminal.
     private let signalTrace = SignalTraceView()
     private let statusBar = SignalStatusBar()
@@ -402,7 +402,7 @@ class TerminalViewContainer: NSView {
 
 // MARK: - Signal chrome views
 
-/// Ghostty X: the luminous line that wires the selected sidebar tab to the focused pane.
+/// Sigpane: the luminous line that wires the selected sidebar tab to the focused pane.
 /// It is masked by the panes, so it only shows in the gutters — like a trace running
 /// under the panes — and ends in a lit port on the focused pane's edge.
 private final class SignalTraceView: NSView {
@@ -539,7 +539,7 @@ private final class SignalTraceView: NSView {
     }
 }
 
-/// Ghostty X: the slim status line under the terminal in Signal windows. It follows the
+/// Sigpane: the slim status line under the terminal in Signal windows. It follows the
 /// focused pane. For an agent: its state and how long the turn has run, the model, the
 /// permission mode, how full the context window is, the cost and the lines changed. For
 /// a shell: the title and the key hints. Then which pane has focus, its size, the time.
@@ -985,7 +985,7 @@ extension TerminalViewContainer {
     }
 }
 
-/// Ghostty X: the sweep that crosses a terminal when its tab comes forward. A thin line in
+/// Sigpane: the sweep that crosses a terminal when its tab comes forward. A thin line in
 /// the window's color travels across with a short glow trailing it. Nothing under it is
 /// darkened. It is only on screen for the length of the sweep.
 private final class SignalArrivalView: NSView {

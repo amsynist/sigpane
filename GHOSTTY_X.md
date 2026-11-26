@@ -1,13 +1,13 @@
-# Ghostty X
+# Sigpane
 
-A macOS appearance fork based on `amsynist/ghostty-X` at e95bed633. The terminal engine remains Ghostty. The visual reference is the owner's OmniVM-X terminal: compact tabs aligned left, rounded split panes, six-point gutters and a blue focus outline. The UI implementation is written independently using native AppKit tab controls and SwiftUI split views; no OmniWM source or window-management dependency is included.
+An independent macOS terminal based on [Ghostty](https://github.com/ghostty-org/ghostty). The terminal engine remains Ghostty. The visual reference is the owner's OmniVM-X terminal: compact tabs aligned left, rounded split panes, six-point gutters and a blue focus outline. The UI implementation is written independently using native AppKit tab controls and SwiftUI split views; no OmniWM source or window-management dependency is included.
 
 ## Changes
 
 - With `macos-titlebar-style = tabs` on macOS 26+, a custom tab strip replaces the native tab strip's visible contents within its existing titlebar accessory. Native AppKit tab groups still own windows, selection and restoration.
 - Tabs support selection, close confirmation, rename, tab colors, drag reordering within a group, context menu movement and moving to a new window. Overflow scrolls horizontally and the selected tab is revealed. Keyboard bindings come from the existing Ghostty configuration.
 - Split panes have eight-point corners, six-point gutters, and a focus outline. The existing terminal surfaces, drag/drop zones, split tree, zoom and equalize actions are retained. Divider geometry accounts for the entire gap and drag resizing uses translation to avoid jumps.
-- The app bundle is `GhosttyX.app` (`com.amsynist.ghosttyx`) so the official application remains separate. The executable and Swift module keep their upstream names. Existing Ghostty configuration is reused. No custom user config, signing keys or terminal history belongs in this repository.
+- The app bundle is `Sigpane.app` (`com.amsynist.ghosttyx`) so the official application remains separate. The executable and Swift module keep their upstream names. Existing Ghostty configuration is reused. No custom user config, signing keys or terminal history belongs in this repository.
 - macOS 13–15 retains upstream tab appearance. No private terminal engine APIs or additional dependency were introduced. Titlebar attachment uses the existing upstream AppKit hierarchy integration.
 
 ## Build
@@ -20,7 +20,7 @@ checkout. To run the native tests after building the core framework:
 macos/build.nu --configuration ReleaseLocal --arch "$(uname -m)" --action test
 ```
 
-The local app is `macos/build/ReleaseLocal/GhosttyX.app`.
+The local app is `macos/build/ReleaseLocal/Sigpane.app`.
 
 ## Review and validation
 
@@ -131,7 +131,7 @@ showing or folded (or the command itself when it printed nothing).
   is never folded. Colors come back when a fold is opened in place, not in the peek or a copy.
 - **Prompt.** With "Signal prompt (zsh)" on, the app sets `GHOSTTY_X_PROMPT=1` and the zsh
   integration draws the prompt itself (directory and branch chips, caret, Python environment on
-  the right) with zsh builtins only, taking over from Starship inside Ghostty X. When a line is
+  the right) with zsh builtins only, taking over from Starship inside Sigpane. When a line is
   accepted its prompt shrinks to a blank spacer row and the caret, which is what gives each
   block its own box.
 - **Command deck.** The prompt being typed at is a card of its own, drawn by the same overlay:
@@ -212,7 +212,7 @@ showing or folded (or the command itself when it printed nothing).
   squeezed to zero width for a frame, `bounds.insetBy` then returns the null rectangle, its
   midpoint is not a number, and `NSBezierPath.line(to:)` raises, which AppKit turns into a crash
   (`+[NSApplication _crashOnException:]`; found from the crash record and the system log, 4 demo
-  runs of 4 failed). Every `draw(_:)` in the Ghostty X chrome now returns when its bounds are
+  runs of 4 failed). Every `draw(_:)` in the Sigpane chrome now returns when its bounds are
   under two points, the sliding highlight is never given a negative size, and it is not placed
   behind a tab that has no frame yet.
 - **Memory and idle cost.** A demo run now opens, switches and closes tabs in three rounds and

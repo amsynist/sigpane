@@ -44,7 +44,7 @@ struct TerminalSplitTreeView: View {
     let tree: SplitTree<Ghostty.SurfaceView>
     let action: (TerminalSplitOperation) -> Void
 
-    /// Ghostty X: gutter between split panes. It is painted with the terminal background
+    /// Sigpane: gutter between split panes. It is painted with the terminal background
     /// (same color and opacity as the panes) so a translucent, blurred window reads as one
     /// even surface instead of showing the desktop through the gaps.
     static let gutter: CGFloat = 6
@@ -444,7 +444,7 @@ enum TerminalSplitDropZone: String, Equatable {
     }
 }
 
-/// Ghostty X: the strip above a pane in Signal windows — its letter, title, directory and
+/// Sigpane: the strip above a pane in Signal windows — its letter, title, directory and
 /// size in cells. While the pointer is over it: copy the last command's output, list recent
 /// commands, split, and close.
 ///
@@ -687,7 +687,7 @@ struct ContextPie: Shape {
 }
 
 extension Ghostty.SurfaceView {
-    /// Ghostty X: text of a recent command, found through the prompt marks that shell
+    /// Sigpane: text of a recent command, found through the prompt marks that shell
     /// integration leaves. `back` 0 is the most recent command with output. Returns nil
     /// when there is no such command (or no shell integration). Output that was folded
     /// comes back whole.
@@ -702,7 +702,7 @@ extension Ghostty.SurfaceView {
     }
 }
 
-/// Ghostty X: what marks the focused pane in Signal windows — a soft glow on its outline,
+/// Sigpane: what marks the focused pane in Signal windows — a soft glow on its outline,
 /// bright corner brackets, and a scan that runs down the pane when it takes focus.
 ///
 /// Nothing here is redrawn while it moves: the glow is blurred once and faded, the
@@ -828,7 +828,7 @@ extension Ghostty.Config {
 
 // MARK: - Command blocks
 
-/// Ghostty X: keeps a `SignalBlockView` over a pane's terminal while command blocks are on.
+/// Sigpane: keeps a `SignalBlockView` over a pane's terminal while command blocks are on.
 /// It draws nothing itself. The overlay is an AppKit view placed beside the surface view,
 /// so a click that misses its buttons reaches the terminal exactly as before.
 private struct SignalBlockAttachment: NSViewRepresentable {
@@ -857,7 +857,7 @@ private struct SignalBlockAttachment: NSViewRepresentable {
     }
 }
 
-/// Ghostty X: draws a box around each command and its output, with a copy button and a
+/// Sigpane: draws a box around each command and its output, with a copy button and a
 /// fold chevron on the command line, and the command deck: the prompt being typed at, as a
 /// card in the window's color the way the selected session card is.
 ///

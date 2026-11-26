@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import GhosttyKit
 
-/// Appearance of the Ghostty X tab strip. Set from the Tab Bar settings window and stored
+/// Appearance of the Sigpane tab strip. Set from the Tab Bar settings window and stored
 /// in the app's own defaults (not the Ghostty config), so changes apply live to every window.
 struct TabBarSettings: Codable, Equatable {
     enum Position: String, Codable, CaseIterable, Identifiable {
@@ -186,7 +186,7 @@ struct TabBarSettings: Codable, Equatable {
     var agentToolDetails = true
     /// Apply the Signal Void colors over the configured theme.
     var signalColors = true
-    /// Draw Ghostty X's own prompt in zsh, in place of a prompt theme such as Starship.
+    /// Draw Sigpane's own prompt in zsh, in place of a prompt theme such as Starship.
     var signalPrompt = true
     /// Fold long output for you. Off by default: what a command printed stays on the
     /// screen until you fold it yourself, the way a terminal is expected to behave.
@@ -302,7 +302,7 @@ struct TabBarSettings: Codable, Equatable {
     }
 }
 
-/// Ghostty X: terminal config the Signal look applies over the user's own config. The app
+/// Sigpane: terminal config the Signal look applies over the user's own config. The app
 /// writes it to a cache file and loads it last, so the user's config file is never edited
 /// and turning the options off brings their own colors and prompt straight back.
 enum SignalColors {
@@ -398,7 +398,7 @@ enum SignalColors {
     }
 }
 
-/// Ghostty X: a scripted walk through the Signal chrome, so a build can be checked from
+/// Sigpane: a scripted walk through the Signal chrome, so a build can be checked from
 /// outside the app. Launch with `GHOSTTYX_SIGNAL_DEMO=<folder>`: the app opens tabs and a
 /// split, runs harmless commands, moves the tab bar through every position, and drops a
 /// `<name>.mark` file in the folder each time a state is ready to be photographed.
@@ -892,7 +892,7 @@ enum SignalDemo {
     }
 }
 
-/// Ghostty X: runs one short animation by stepping a progress value on a timer.
+/// Sigpane: runs one short animation by stepping a progress value on a timer.
 ///
 /// The Signal chrome moves real geometry (frames, constraint constants, a drawing
 /// progress) rather than leaning on implicit layer animations, which do nothing in a
@@ -1135,7 +1135,7 @@ final class TabBarSettingsStore: ObservableObject {
     }
 }
 
-/// Ghostty X's own keys: Control-S shows or hides the sidebar, Control-F folds every
+/// Sigpane's own keys: Control-S shows or hides the sidebar, Control-F folds every
 /// command block or opens every fold, and Shift with the up and down arrows picks a
 /// block for Control-C to copy (see `SignalBlockView.handleKey`).
 ///

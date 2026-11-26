@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ghostty X · Signal agents preview</title>
+<title>Sigpane · Signal agents preview</title>
 <style>
 /* Layout: one live window mock leads; close-ups, the data map and the motion budget follow in a single reading column. */
 :root{
@@ -134,7 +134,7 @@ td.m{font:12px var(--mono);white-space:nowrap}
 
 <main>
   <section>
-    <span class="eyebrow">Ghostty X · design preview</span>
+    <span class="eyebrow">Sigpane · design preview</span>
     <h1>Agents as first-class sessions</h1>
     <p>Today the chrome says an agent is <b>Running</b> in five places and nowhere says what it is doing, how long it has been at it, or how much context is left. This pass keeps every surface the size it is now and changes what each one is for: the sidebar answers <b>which session needs me</b>, the pane header answers <b>what is this agent doing</b>, and the status line answers <b>what is it costing</b>.</p>
   </section>
@@ -205,7 +205,7 @@ td.m{font:12px var(--mono);white-space:nowrap}
       <tr><td>Real progress percentage</td><td class="m">OSC 9;4 → GHOSTTY_ACTION_PROGRESS_REPORT (already published per surface)</td><td>Upstream bar only</td></tr>
       <tr><td>Last command result</td><td class="m">OSC 133;D → GHOSTTY_ACTION_COMMAND_FINISHED (exit code, duration)</td><td>Not in the chrome</td></tr>
     </table></div>
-    <p>Two things to decide with this. Tool targets are new information in the state file: today's hook stores a phase and nothing else, on purpose. The proposal stores a tool name plus a file's last path component or the first word of a command, in the same per-pane 0700 folder that is deleted when the pane closes, behind a setting. And the context numbers only exist in the status line payload, so Ghostty X would install a small wrapper that records them and then runs whatever status line command you already have.</p>
+    <p>Two things to decide with this. Tool targets are new information in the state file: today's hook stores a phase and nothing else, on purpose. The proposal stores a tool name plus a file's last path component or the first word of a command, in the same per-pane 0700 folder that is deleted when the pane closes, behind a setting. And the context numbers only exist in the status line payload, so Sigpane would install a small wrapper that records them and then runs whatever status line command you already have.</p>
   </section>
 
   <section>
@@ -226,7 +226,7 @@ td.m{font:12px var(--mono);white-space:nowrap}
     <h2>Decisions I need from you</h2>
     <ol class="ask-list">
       <li><b>Tool details in the sidebar.</b> Show tool name and file name (as drawn), or state only as today?</li>
-      <li><b>Status line wrapper.</b> OK for Ghostty X to wrap your Claude Code status line command to read context and cost? Without it the context frame, pie and cost are not available.</li>
+      <li><b>Status line wrapper.</b> OK for Sigpane to wrap your Claude Code status line command to read context and cost? Without it the context frame, pie and cost are not available.</li>
       <li><b>Load sparkline.</b> Retire it to an off-by-default setting, or keep it beside the fleet bar?</li>
       <li><b>Agents overview.</b> Build the <code>⌘⇧A</code> panel in this pass, or land the card, header and status line first?</li>
     </ol>

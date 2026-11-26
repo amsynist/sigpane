@@ -14,7 +14,7 @@ final class TabBarSettingsController: NSWindowController, NSWindowDelegate {
             contentRect: NSRect(x: 0, y: 0, width: 940, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: true)
-        window.title = "Ghostty X Settings"
+        window.title = "Sigpane Settings"
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 820, height: 520)
         window.setFrameAutosaveName("GhosttyXTabBarSettings")
@@ -205,7 +205,7 @@ struct TabBarSettingsView: View {
                     Toggle("Signal Void colors", isOn: settings.signalColors)
                         .help("Applies the dark Signal palette over your theme. Your config file is not changed.")
                     Toggle("Signal prompt (zsh)", isOn: settings.signalPrompt)
-                        .help("Ghostty X draws its own prompt in new zsh sessions, in place of a prompt theme such as Starship.")
+                        .help("Sigpane draws its own prompt in new zsh sessions, in place of a prompt theme such as Starship.")
                     if store.settings.signalPrompt {
                         Picker("Prompt style", selection: settings.promptStyle) {
                             ForEach(TabBarSettings.PromptStyle.allCases) { style in

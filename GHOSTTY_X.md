@@ -321,8 +321,7 @@ chrome already had (`docs/previews/signal-agents.html` is the design).
   three tabs with a running, a waiting and a finished session, photographed in the sidebar,
   the collapsed rail, compacting, the overview and a top strip. Make
   `/tmp/ghostty-x-demo/{api-service,release-tools,docs-site}` first: the demo's tabs sit in
-  them, so the cards have names. The README's pictures were taken from this run with
-  `screencapture -l` (`--background-opacity=1` so the window is not see-through) and framed over
-  the teal cutting-mat wallpaper. The hook script was run
+  them, so the cards have names. The README's pictures were captured live over the teal
+  cutting-mat wallpaper with `background-opacity = 0.6` and `background-blur = 40`. The hook script was run
   against made-up events in scratch folders. Not checked: a real Claude Code or Codex session
   end to end, and the Settings buttons, which edit `~/.claude/settings.json`.

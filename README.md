@@ -45,11 +45,13 @@ Amber means **Needs approval**, cyan **Running**, violet **Compacting**, red
 **Stopped on error**, and green **Done** until you have looked at the pane.
 Approvals are handled in the original CLI prompt.
 
-[![Three sessions in the sidebar: one running with subagents, one waiting for approval, one ready](docs/previews/agents/agents-1-working.png)](docs/previews/agents/agents-1-working.png)
+[![Three sessions in the sidebar: one running with subagents, one waiting for approval, one ready](docs/previews/agents/agents-1-working.webp)](docs/previews/agents/agents-1-working.webp)
 
 | Agents overview | Top tabs |
 | --- | --- |
-| [![The agents overview panel listing three sessions with their subagents](docs/previews/agents/agents-4-overview.png)](docs/previews/agents/agents-4-overview.png) | [![The same sessions with the tab bar at the top](docs/previews/agents/agents-5-top.png)](docs/previews/agents/agents-5-top.png) |
+| [![The agents overview panel listing three sessions with their subagents](docs/previews/agents/agents-4-overview.webp)](docs/previews/agents/agents-4-overview.webp) | [![The same sessions with the tab bar at the top](docs/previews/agents/agents-5-top.webp)](docs/previews/agents/agents-5-top.webp) |
+| **Collapsed sidebar** | **Context near limit (93%)** |
+| [![The sidebar collapsed to numbered tiles with context rings and state dots](docs/previews/agents/agents-2-rail.webp)](docs/previews/agents/agents-2-rail.webp) | [![A session compacting at 93% context with a red ring and header progress](docs/previews/agents/agents-3-compacting.webp)](docs/previews/agents/agents-3-compacting.webp) |
 
 [Open the interactive preview](docs/previews/signal-agents.html)
 
@@ -142,6 +144,8 @@ focus effects, status hints, and **Agent Activity** hooks. The **Terminal** sect
 Signal prompt, command blocks and optional Signal Void colors. Window opacity
 and blur follow your Ghostty configuration, and the Quick Terminal derives a
 matching Signal accent from your active screen wallpaper when available.
+
+[![Ghostty X Settings window showing Design, Agent Activity, Terminal controls, and Live preview](docs/previews/agents/ghostty-x-settings.webp)](docs/previews/agents/ghostty-x-settings.webp)
 
 The app builds as `GhosttyX.app` with bundle identifier
 `com.amsynist.ghosttyx`. See the [build and implementation notes](GHOSTTY_X.md)

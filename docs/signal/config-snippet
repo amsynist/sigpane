@@ -1,6 +1,6 @@
 # Lines to add to ~/.config/ghostty/config for the Signal look.
 # The chrome itself (sidebar, pane headers, trace, status line) is set in the app:
-# Ghostty menu > Tab Bar…
+# Ghostty menu > Ghostty X Settings…
 
 theme = signal-void
 

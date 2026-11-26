@@ -338,6 +338,7 @@ class TerminalViewContainer: NSView {
             if let size = focused?.surfaceSize {
                 content.size = "\(size.columns)×\(size.rows)"
             }
+            content.agent = focused?.agentActivity.summary.lead
             statusBar.theme = edgeTabs.theme
             statusBar.color = color
             statusBar.content = content
@@ -538,22 +539,35 @@ private final class SignalTraceView: NSView {
     }
 }
 
-/// Ghostty X: the slim status line under the terminal in Signal windows — a live dot,
-/// the focused pane's title, which pane has focus, its size in cells, and the time.
+/// Ghostty X: the slim status line under the terminal in Signal windows. It follows the
+/// focused pane. For an agent: its state and how long the turn has run, the model, the
+/// permission mode, how full the context window is, the cost and the lines changed. For
+/// a shell: the title and the key hints. Then which pane has focus, its size, the time.
 private final class SignalStatusBar: NSView {
     struct Content: Equatable {
         var title = ""
         var pane = ""
         var size = ""
+        /// The agent session in the focused pane, when there is one.
+        var agent: AgentActivity.Session?
     }
 
     var theme = RoundedTabTheme.fallback { didSet { if theme != oldValue { needsDisplay = true } } }
     var color: NSColor = .controlAccentColor { didSet { if color != oldValue { needsDisplay = true } } }
-    var content = Content() { didSet { if content != oldValue { needsDisplay = true } } }
+    var content = Content() {
+        didSet {
+            guard content != oldValue else { return }
+            needsDisplay = true
+            updateClock()
+        }
+    }
     /// Keys worth remembering, most useful first. As many as fit are drawn in the free
     /// middle of the line.
     var hints: [SignalHints.Hint] = [] { didSet { if hints != oldValue { needsDisplay = true } } }
     private var clock: Timer?
+    /// How often the line needs drawing again by itself: every second while it shows a
+    /// running turn's time, otherwise once a minute for the clock.
+    private var clockInterval: TimeInterval = 0
     /// Where the clock was last drawn, so a tick repaints only that.
     private var clockRect = NSRect.zero
 
@@ -564,7 +578,7 @@ private final class SignalStatusBar: NSView {
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
+        formatter.dateFormat = "HH:mm"
         return formatter
     }()
 
@@ -589,18 +603,26 @@ private final class SignalStatusBar: NSView {
         guard window != nil, isLive, !isHidden else {
             clock?.invalidate()
             clock = nil
+            clockInterval = 0
             return
         }
-        guard clock == nil else { return }
+        let wanted: TimeInterval = content.agent?.elapsed() != nil ? 1 : 60
+        guard clock == nil || clockInterval != wanted else { return }
+        clock?.invalidate()
+        clockInterval = wanted
         needsDisplay = true
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] timer in
+        // The clock shows minutes, so it only needs drawing as each minute starts. A
+        // turn's time counts seconds, and is drawn each second while one is running.
+        let now = Date().timeIntervalSinceReferenceDate
+        let first = Date(timeIntervalSinceReferenceDate: (now / wanted).rounded(.down) * wanted + wanted)
+        let timer = Timer(fire: first, interval: wanted, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
                 guard let self else { timer.invalidate(); return }
-                self.setNeedsDisplay(self.clockRect)
+                if self.clockInterval == 1 { self.needsDisplay = true } else { self.setNeedsDisplay(self.clockRect) }
             }
         }
-        // A whole second of slack lets the system batch this wakeup with others.
-        timer.tolerance = 0.5
+        // Slack lets the system batch this wakeup with others.
+        timer.tolerance = wanted == 1 ? 0.25 : 1
         RunLoop.main.add(timer, forMode: .common)
         clock = timer
     }
@@ -645,10 +667,13 @@ private final class SignalStatusBar: NSView {
         }
 
         var x: CGFloat = 14
+        if let agent = content.agent {
+            drawAgent(agent, from: x, to: right, regular: regular, strong: strong)
+            return
+        }
         color.setFill()
         NSBezierPath(ovalIn: NSRect(x: x, y: (bounds.midY - 3).rounded(), width: 6, height: 6)).fill()
         x += 13
-        x = put("LIVE", at: x, font: strong, color: color) + 16
         // With hints to show, a long title gives up some of its room for them.
         let room = right - x
         let titleRoom = hints.isEmpty ? room : min(room, max(160, room * 0.38))
@@ -661,6 +686,78 @@ private final class SignalStatusBar: NSView {
         }
     }
 
+    /// The focused pane's agent session, most important first; what does not fit is left out.
+    private func drawAgent(_ agent: AgentActivity.Session, from start: CGFloat, to end: CGFloat,
+                           regular: NSFont, strong: NSFont) {
+        let fg = theme.foreground
+        let phase = agent.phase
+        let state = phase == .ready ? fg.withAlphaComponent(0.45) : phase.color
+        var x = start
+        func width(_ string: String, _ font: NSFont) -> CGFloat {
+            ceil(NSAttributedString(string: string, attributes: [.font: font]).safeSize().width)
+        }
+        func fits(_ needed: CGFloat) -> Bool { x + needed <= end - 8 }
+
+        state.setFill()
+        NSBezierPath(ovalIn: NSRect(x: x, y: (bounds.midY - 3).rounded(), width: 6, height: 6)).fill()
+        x += 13
+        let label = agent.elapsed().map { "\(phase.label) \($0)" } ?? phase.label
+        x = put(label, at: x, font: strong, color: state, maxWidth: max(0, end - x - 8)) + 14
+
+        if let model = agent.model, fits(width(model, regular)) {
+            x = put(model, at: x, font: regular, color: fg.withAlphaComponent(0.6)) + 12
+        }
+        if let mode = agent.modeLabel, fits(width(mode, regular) + 12) {
+            let chip = NSRect(x: x + 0.5, y: (bounds.midY - 7.5).rounded() + 0.5, width: width(mode, regular) + 11, height: 14)
+            let box = NSBezierPath(roundedRect: chip, xRadius: 4, yRadius: 4)
+            // A mode that lets the agent act without asking stands out a little.
+            let tone = agent.modeIsPermissive ? AgentActivity.Phase.approval.color : fg
+            tone.withAlphaComponent(agent.modeIsPermissive ? 0.4 : 0.14).setStroke()
+            box.lineWidth = 1
+            box.stroke()
+            _ = put(mode, at: x + 6, font: regular, color: tone.withAlphaComponent(agent.modeIsPermissive ? 0.95 : 0.6))
+            x = chip.maxX + 14
+        }
+        if let percent = agent.context, fits(width("CTX", regular) + 110) {
+            x = put("CTX", at: x, font: regular, color: fg.withAlphaComponent(0.34)) + 6
+            // Ten cells, one for each tenth of the context window in use.
+            let warning = AgentActivity.Session.contextColor(percent)
+            let lit = Int((Double(percent) / 10).rounded())
+            for cell in 0..<10 {
+                (cell < lit ? (warning ?? color) : fg.withAlphaComponent(0.12)).setFill()
+                NSBezierPath(roundedRect: NSRect(x: x, y: (bounds.midY - 4.5).rounded(), width: 5, height: 9),
+                             xRadius: 1, yRadius: 1).fill()
+                x += 6.5
+            }
+            x += 4
+            x = put("\(percent)%", at: x, font: regular, color: warning ?? fg.withAlphaComponent(0.6)) + 6
+            if let tokens = agent.tokensLabel, fits(width(tokens, regular)) {
+                x = put(tokens, at: x, font: regular, color: fg.withAlphaComponent(0.34))
+            }
+            x += 14
+        }
+        if let cost = agent.cost {
+            let text = String(format: "$%.2f", cost)
+            if fits(width(text, regular)) {
+                x = put(text, at: x, font: regular, color: fg.withAlphaComponent(0.6)) + 12
+            }
+        }
+        // What the session has changed: how many files (from the hooks), and lines added
+        // and removed (from the status line). Shown from the start, so it is clear where
+        // the numbers will appear; dim while they are all zero.
+        if let files = agent.filesLabel, fits(width(files, regular)) {
+            x = put(files, at: x, font: regular, color: fg.withAlphaComponent(0.6)) + 8
+        }
+        if let added = agent.linesAdded, let removed = agent.linesRemoved,
+           fits(width("+\(added) −\(removed)", regular) + 6) {
+            let quiet = added + removed == 0
+            x = put("+\(added)", at: x, font: regular,
+                    color: quiet ? fg.withAlphaComponent(0.3) : AgentActivity.Phase.complete.color) + 6
+            _ = put("−\(removed)", at: x, font: regular,
+                    color: quiet ? fg.withAlphaComponent(0.3) : AgentActivity.Phase.error.color)
+        }
+    }
+
     /// The key hints, as many as fit, centered in the free stretch of the line: each a
     /// small key cap and what it does.
     private func drawHints(from start: CGFloat, to end: CGFloat) {
@@ -668,7 +765,13 @@ private final class SignalStatusBar: NSView {
         let keyFont = SignalFont.mono(9.5, .semibold)
         let labelFont = SignalFont.mono(10, .regular)
         let gap: CGFloat = 18
-        var pieces: [(keys: NSAttributedString, label: NSAttributedString, cap: CGFloat, width: CGFloat)] = []
+        struct Piece {
+            let keys: NSAttributedString
+            let label: NSAttributedString
+            let cap: CGFloat
+            let width: CGFloat
+        }
+        var pieces: [Piece] = []
         var total: CGFloat = 0
         for hint in hints {
             let keys = NSAttributedString(string: hint.keys, attributes: [
@@ -681,7 +784,7 @@ private final class SignalStatusBar: NSView {
             let width = cap + 6 + ceil(label.safeSize().width)
             guard total + width + (pieces.isEmpty ? 0 : gap) <= end - start else { break }
             total += width + (pieces.isEmpty ? 0 : gap)
-            pieces.append((keys, label, cap, width))
+            pieces.append(Piece(keys: keys, label: label, cap: cap, width: width))
         }
         guard !pieces.isEmpty else { return }
 

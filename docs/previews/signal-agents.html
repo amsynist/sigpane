@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ghostty X · Signal agents preview</title>
+<style>
+/* Layout: one live window mock leads; close-ups, the data map and the motion budget follow in a single reading column. */
+:root{
+  color-scheme:dark;
+  --page:#07080d; --void:#0a0c13; --deep:#06070c; --panel:#10131f; --raise:#161a28;
+  --ink:#dde3f0; --dim:rgba(221,227,240,.6); --faint:rgba(221,227,240,.34); --line:rgba(221,227,240,.09);
+  --blue:#5ab8ff; --violet:#9d8cff; --teal:#4fe3c1; --green:#5fe3a8; --amber:#ffc35a; --red:#ff6f91;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.55 var(--sans);
+  padding-block:40px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+section{display:flex;flex-direction:column;gap:16px;min-width:0}
+h1{font:600 30px/1.15 var(--sans);letter-spacing:-.02em;margin:0;text-wrap:balance}
+h2{font:600 19px/1.25 var(--sans);letter-spacing:-.01em;margin:0;text-wrap:balance}
+p{margin:0;max-width:68ch;color:var(--dim)}
+p b,li b,td b{color:var(--ink);font-weight:600}
+.eyebrow{font:600 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--blue)}
+.scroll{overflow-x:auto;padding-bottom:4px}
+code{font:12.5px var(--mono);color:var(--ink);background:var(--raise);padding:1px 5px;border-radius:4px}
+
+/* scenario switch */
+.switch{display:flex;flex-wrap:wrap;gap:6px}
+.switch button{font:500 12px var(--mono);color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer}
+.switch button:hover{color:var(--ink)}
+.switch button[aria-pressed=true]{color:var(--void);background:var(--blue);border-color:var(--blue)}
+.switch button:focus-visible,.card:focus-visible,.jump:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+/* window mock */
+.win{min-width:920px;font:11px var(--mono);background:var(--deep);border:1px solid rgba(221,227,240,.14);border-radius:13px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.tbar{height:38px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--void);border-bottom:1px solid var(--line);position:relative}
+.lights{display:flex;gap:7px}.lights i{width:11px;height:11px;border-radius:50%;background:#2a2f40}
+.cap{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:9px;height:24px;padding:0 12px 0 5px;border:1px solid var(--line);border-radius:8px;background:rgba(221,227,240,.03);white-space:nowrap}
+.cap .no{font-weight:700;font-size:10px;color:var(--void);border-radius:4px;padding:2px 6px}
+.cap b{font-weight:600;font-size:12px}.cap span{color:var(--faint);font-size:12px}
+.attn{margin-left:auto;display:flex;align-items:center;gap:7px;height:24px;padding:0 10px;border-radius:8px;border:1px solid rgba(255,195,90,.35);background:rgba(255,195,90,.1);color:var(--amber);cursor:pointer;font:600 11px var(--mono)}
+.tact{display:flex;gap:2px;margin-left:auto;color:var(--faint)}.attn + .tact{margin-left:0}
+.tact i{width:26px;height:22px;display:grid;place-items:center;font-style:normal;border-radius:5px}
+.body{display:grid;grid-template-columns:var(--side,236px) minmax(0,1fr);height:470px;transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1)}
+.side{background:var(--void);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.shead{display:flex;align-items:center;height:36px;padding:0 12px 0 16px;color:var(--faint);letter-spacing:.18em;font-size:10px;font-weight:500}
+.shead .n{margin-left:auto;letter-spacing:0}.shead .tg{margin-left:8px;width:22px;height:20px;display:grid;place-items:center;border-radius:5px;cursor:pointer;letter-spacing:0;border:0;background:none;color:inherit;font:inherit}
+.shead .tg:hover{background:rgba(221,227,240,.07);color:var(--ink)}
+.cards{flex:none;display:flex;flex-direction:column;gap:4px;padding:0 10px;min-height:0}
+.card{position:relative;display:flex;align-items:center;gap:11px;height:54px;padding:0 10px 0 9px;border-radius:10px;border:1px solid transparent;cursor:pointer;background:none;color:inherit;font:inherit;text-align:left;width:100%}
+.card:hover{background:rgba(221,227,240,.04)}
+.card[aria-selected=true]{background:color-mix(in srgb,var(--tint) 10%,transparent);border-color:color-mix(in srgb,var(--tint) 34%,transparent);box-shadow:0 0 18px color-mix(in srgb,var(--tint) 14%,transparent)}
+.card.approval::before{content:"";position:absolute;left:0;top:17px;bottom:17px;width:2px;border-radius:2px;background:var(--amber)}
+.card.approval{background:rgba(255,195,90,.06)}
+.tile{position:relative;flex:none;width:36px;height:36px;display:grid;place-items:center}
+.tile svg{position:absolute;inset:0}
+.tile b{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:10.5px;font-weight:700;color:var(--tint);background:color-mix(in srgb,var(--tint) 12%,transparent);border:1px solid color-mix(in srgb,var(--tint) 30%,transparent)}
+[aria-selected=true] .tile b{color:var(--void);background:var(--tint);border-color:var(--tint)}
+.tx{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}
+.r1,.r2{display:flex;align-items:baseline;gap:8px;min-width:0}
+.r1 b{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
+[aria-selected=true] .r1 b{color:var(--ink)}
+.r1 time,.r1 kbd{margin-left:auto;flex:none;font:inherit;font-size:10px;color:var(--faint)}
+.r2{font-size:10.5px;color:var(--faint)}
+.r2 .act{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.r2 .act em{font-style:normal;color:var(--dim)}
+.gl{flex:none;width:9px;text-align:center;font-weight:700}
+.pips{margin-left:auto;flex:none;display:flex;align-items:center;gap:3px;font-size:9.5px;color:var(--faint)}
+.pips i{width:5px;height:5px;border-radius:50%;border:1px solid var(--blue)}.pips i.r{background:var(--blue)}.pips i.d{border-color:var(--faint)}
+.add{margin:4px 10px 0;height:34px;border:1px dashed rgba(221,227,240,.16);border-radius:9px;display:flex;align-items:center;gap:9px;padding:0 13px;color:var(--faint)}
+.fleet{margin-top:auto;padding:10px 14px 12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
+.fleet .h{display:flex;color:var(--faint);letter-spacing:.16em;font-size:9.5px}.fleet .h span{margin-left:auto;letter-spacing:0}
+.seg{display:flex;gap:2px;height:5px}.seg i{flex:1;border-radius:2px;background:rgba(221,227,240,.1)}
+.fleet .sum{color:var(--dim);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jump{display:flex;align-items:center;gap:8px;height:26px;padding:0 9px;border-radius:7px;border:1px solid rgba(255,195,90,.32);background:rgba(255,195,90,.09);color:var(--amber);font:600 10.5px var(--mono);cursor:pointer}
+.jump kbd{margin-left:auto;font:inherit;opacity:.7}
+.win.rail{--side:58px}
+.rail .tx,.rail .shead span,.rail .shead .n,.rail .add span,.rail .fleet .h,.rail .fleet .sum,.rail .jump span,.rail .jump kbd{display:none}
+.rail .shead{padding:0;justify-content:center}.rail .shead .tg{margin:0}
+.rail .cards{padding:0 6px}.rail .card{justify-content:center;padding:0}.rail .add{margin:4px 8px 0;justify-content:center;padding:0}
+.rail .fleet{padding:8px 8px 10px}.rail .jump{justify-content:center;padding:0}
+.work{display:grid;grid-template-columns:1.25fr 1fr;gap:8px;padding:8px;min-width:0}
+.pane{position:relative;display:flex;flex-direction:column;min-width:0;background:var(--void);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pane.focus{border-color:color-mix(in srgb,var(--tint) 45%,transparent);box-shadow:0 0 22px color-mix(in srgb,var(--tint) 13%,transparent)}
+.ph{position:relative;display:flex;align-items:center;gap:9px;height:24px;padding:0 10px 0 13px;background:var(--deep);border-bottom:1px solid var(--line);font-size:10.5px;color:var(--faint);white-space:nowrap}
+.ph .tag{font-weight:700;color:var(--faint)}.focus .ph .tag{color:var(--tint)}
+.ph .who{color:var(--dim)}.ph .act{overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--dim)}.ph .act em{font-style:normal;color:var(--ink)}
+.ph .sp{flex:1}
+.ph .steps{display:flex;gap:1.5px;align-items:center}.ph .steps i{width:6px;height:4px;border-radius:1px;background:rgba(221,227,240,.14)}.ph .steps i.on{background:var(--green)}
+.pie{display:inline-flex;align-items:center;gap:5px}
+.hair{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden}
+.hair.run::after{content:"";position:absolute;inset:0 auto 0 0;width:28%;background:linear-gradient(90deg,transparent,var(--blue),transparent);animation:slide 1.6s linear infinite}
+.hair.wait{background:var(--amber)}.hair.pct{background:rgba(221,227,240,.08)}.hair.pct b{display:block;height:100%;background:var(--blue)}
+@keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(460%)}}
+.term{flex:1;padding:12px 14px;font-size:11.5px;line-height:1.7;color:var(--dim);overflow:hidden}
+.term p{max-width:none;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:inherit}
+.term .hi{color:var(--ink)}.term .ok{color:var(--green)}.term .bl{color:var(--blue)}.term .am{color:var(--amber)}.term .vi{color:var(--violet)}
+.ask{margin-top:8px;border:1px solid rgba(255,195,90,.4);border-radius:8px;padding:8px 11px;color:var(--amber)}
+.sbar{height:24px;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--void);border-top:1px solid var(--line);font-size:10.5px;color:var(--faint);white-space:nowrap}
+.sbar .st{display:flex;align-items:center;gap:7px;font-weight:600}.sbar .st i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.sbar .sp{flex:1}.sbar .v{color:var(--dim)}
+.cells{display:inline-flex;gap:1.5px;vertical-align:middle;margin:0 6px}.cells i{width:5px;height:9px;border-radius:1px;background:rgba(221,227,240,.12)}
+.chip{border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--dim)}
+.key{border:1px solid rgba(221,227,240,.16);background:rgba(221,227,240,.05);border-radius:4px;padding:0 5px;color:var(--dim);font-size:9.5px;margin-right:5px}
+.mark{position:absolute;z-index:3;width:17px;height:17px;border-radius:50%;background:var(--ink);color:var(--void);font:700 10px/17px var(--sans);text-align:center;box-shadow:0 0 0 3px rgba(7,8,13,.7)}
+.legend{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 28px}
+.legend li{display:grid;grid-template-columns:17px 1fr;gap:11px;color:var(--dim);font-size:14px}
+.legend .mark{position:static;box-shadow:none;margin-top:2px}
+
+/* close-ups */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.cell{background:var(--void);border:1px solid var(--line);border-radius:11px;padding:10px;display:flex;flex-direction:column;gap:8px;font:11px var(--mono);min-width:0}
+.cell > small{font:12.5px/1.45 var(--sans);color:var(--dim);padding:0 4px 2px}
+.cell > small b{color:var(--ink)}
+.cell .card{cursor:default}
+.strip{background:var(--void);border:1px solid var(--line);border-radius:11px;overflow:hidden;font:11px var(--mono);min-width:760px}
+.strip + .strip{margin-top:8px}
+table{border-collapse:collapse;width:100%;min-width:680px;font-size:13.5px}
+th{font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--dim)}
+td:first-child{color:var(--ink);white-space:nowrap;font-weight:600}
+td.m{font:12px var(--mono);white-space:nowrap}
+.ov{background:var(--panel);border:1px solid rgba(221,227,240,.14);border-radius:12px;font:11px var(--mono);max-width:560px;min-width:440px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.ov .oh{display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--line);color:var(--faint);letter-spacing:.16em;font-size:10px}.ov .oh kbd{margin-left:auto;font:inherit;letter-spacing:0}
+.orow{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:11px;align-items:center;padding:9px 14px}
+.orow + .orow,.osub + .orow{border-top:1px solid var(--line)}
+.orow .r1 b{color:var(--ink)}.orow .meta{color:var(--faint);font-size:10.5px;text-align:right;line-height:1.6}
+.osub{padding:0 14px 9px 61px;color:var(--faint);font-size:10.5px;line-height:1.75}.osub div{display:flex;gap:8px}.osub em{font-style:normal;color:var(--dim)}.osub span:last-child{margin-left:auto}
+.ask-list{margin:0;padding-left:20px;color:var(--dim);max-width:72ch;display:flex;flex-direction:column;gap:8px}
+@media (prefers-reduced-motion:reduce){.hair.run::after{animation:none;width:100%;opacity:.5}.body{transition:none}}
+</style>
+
+<main>
+  <section>
+    <span class="eyebrow">Ghostty X · design preview</span>
+    <h1>Agents as first-class sessions</h1>
+    <p>Today the chrome says an agent is <b>Running</b> in five places and nowhere says what it is doing, how long it has been at it, or how much context is left. This pass keeps every surface the size it is now and changes what each one is for: the sidebar answers <b>which session needs me</b>, the pane header answers <b>what is this agent doing</b>, and the status line answers <b>what is it costing</b>.</p>
+  </section>
+
+  <section>
+    <h2>The window</h2>
+    <p>Pick a situation. Session cards are clickable; the collapse button in the sidebar header shows the 58-point rail.</p>
+    <div class="switch" id="switch" role="group" aria-label="Situation"></div>
+    <div class="scroll"><div class="win" id="win"></div></div>
+    <ul class="legend">
+      <li><span class="mark">1</span><span><b>Context frame.</b> The outline around a session's tile fills as its context window fills. It turns amber at 75% and red at 90%, so a session about to compact is visible from the sidebar, expanded or collapsed.</span></li>
+      <li><span class="mark">2</span><span><b>Activity line.</b> The second line names the tool and its target while an agent works, and falls back to the directory when nothing is running. A glyph carries the state, so it never depends on colour alone.</span></li>
+      <li><span class="mark">3</span><span><b>Subagent pips.</b> One dot per subagent: filled while it runs, hollow when it has finished. More than five collapse to a count.</span></li>
+      <li><span class="mark">4</span><span><b>Pane header absorbs the agent strip.</b> The separate bar above the terminal goes away, so starting or ending a session no longer changes the terminal's row count. A two-point line on the header's lower edge shows running, waiting, or a real percentage when a program reports one.</span></li>
+      <li><span class="mark">5</span><span><b>Fleet footer.</b> One segment per agent session across every tab, coloured by state, replaces the load sparkline. The approval shortcut sits directly under it.</span></li>
+      <li><span class="mark">6</span><span><b>Status line follows the focused pane.</b> For an agent: state and turn time, model, permission mode, context, cost, lines changed. For a shell: the last command's result and the key hints it has today.</span></li>
+      <li><span class="mark">7</span><span><b>Attention pill.</b> Appears in the titlebar only when a session you cannot see is waiting for approval. A click goes to it.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Session card states</h2>
+    <p>Same 54-point card, same tile. The state changes three things only: the glyph and text on the second line, the trailing time, and the left edge for approval.</p>
+    <div class="grid" id="states"></div>
+  </section>
+
+  <section>
+    <h2>Pane header and status line</h2>
+    <p>Both keep their 24 points. The header carries what is specific to the pane; the status line carries the numbers for whichever pane has focus.</p>
+    <div class="scroll" id="strips"></div>
+  </section>
+
+  <section>
+    <h2>Agents overview</h2>
+    <p>A panel on <code>⌘⇧A</code> listing every agent session in every tab and window, with its subagents underneath. Return jumps to the pane. This is the one new surface; everything else reuses space that already exists.</p>
+    <div class="scroll"><div class="ov" id="ov"></div></div>
+  </section>
+
+  <section>
+    <h2>What changes, surface by surface</h2>
+    <div class="scroll"><table>
+      <tr><th>Surface</th><th>Today</th><th>Proposed</th></tr>
+      <tr><td>Session card</td><td>Directory is replaced by the word "Running". A badge and a moving track sit on the tile.</td><td>Tool and target on line two, turn time trailing, context frame on the tile, subagent pips. Badge and track removed.</td></tr>
+      <tr><td>Agent strip in the pane</td><td>A 28 to 34 point bar above the terminal per session. It resizes the terminal when a session starts or ends, and runs a 24 fps timer while an agent works.</td><td>Removed. Its content moves into the pane header.</td></tr>
+      <tr><td>Pane header</td><td>Letter, title, directory, size.</td><td>Adds provider, current activity, task steps, a context pie, and the progress line.</td></tr>
+      <tr><td>Sidebar footer</td><td>Load-average sparkline, swapped for state counts when any agent exists.</td><td>Fleet bar with one segment per session, a one-line summary, and Next approval. Load average becomes an off-by-default option.</td></tr>
+      <tr><td>Status line</td><td>A "LIVE" dot that is always on, the title again, pane, size, a clock with seconds.</td><td>Real state for the focused pane, model, permission mode, context cells, cost, lines changed. The clock drops its seconds, so it repaints once a minute instead of once a second.</td></tr>
+      <tr><td>Titlebar</td><td>The selected tab's title and directory a fourth time, plus state counts.</td><td>Title stays. Counts are replaced by one attention pill that only exists when something off screen is waiting.</td></tr>
+      <tr><td>Finished turns</td><td>"Turn complete" stays until the next prompt.</td><td>Done is unread until you visit the pane, then it settles to Ready. A session you have looked at stops asking for attention.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Where the data comes from</h2>
+    <p>Nothing here needs a change to the terminal core. Everything arrives through Claude Code hooks, the status line payload, or actions the embedding API already delivers to the app.</p>
+    <div class="scroll"><table>
+      <tr><th>Element</th><th>Source</th><th>Used today</th></tr>
+      <tr><td>State</td><td class="m">SessionStart · UserPromptSubmit · PermissionRequest · Stop · SessionEnd</td><td>Yes</td></tr>
+      <tr><td>Tool and target</td><td class="m">PreToolUse → tool_name, tool_input (file name or command head only)</td><td>Event yes, fields dropped</td></tr>
+      <tr><td>Subagent pips</td><td class="m">SubagentStart · SubagentStop → agent_id, agent_type</td><td>No</td></tr>
+      <tr><td>Task steps</td><td class="m">TaskCreated · TaskCompleted → task_id, task_subject</td><td>No</td></tr>
+      <tr><td>Compacting</td><td class="m">PreCompact · PostCompact</td><td>No</td></tr>
+      <tr><td>Stopped on error</td><td class="m">StopFailure → error</td><td>No</td></tr>
+      <tr><td>Waiting on you (idle)</td><td class="m">Notification → idle_prompt, permission_prompt, agent_needs_input</td><td>No</td></tr>
+      <tr><td>Permission mode, model</td><td class="m">permission_mode on tool events · SessionStart.model</td><td>No</td></tr>
+      <tr><td>Context, tokens, cost, lines</td><td class="m">status line JSON → context_window.used_percentage, cost.*</td><td>No</td></tr>
+      <tr><td>Rate limit</td><td class="m">status line JSON → rate_limits.five_hour</td><td>No</td></tr>
+      <tr><td>Real progress percentage</td><td class="m">OSC 9;4 → GHOSTTY_ACTION_PROGRESS_REPORT (already published per surface)</td><td>Upstream bar only</td></tr>
+      <tr><td>Last command result</td><td class="m">OSC 133;D → GHOSTTY_ACTION_COMMAND_FINISHED (exit code, duration)</td><td>Not in the chrome</td></tr>
+    </table></div>
+    <p>Two things to decide with this. Tool targets are new information in the state file: today's hook stores a phase and nothing else, on purpose. The proposal stores a tool name plus a file's last path component or the first word of a command, in the same per-pane 0700 folder that is deleted when the pane closes, behind a setting. And the context numbers only exist in the status line payload, so Ghostty X would install a small wrapper that records them and then runs whatever status line command you already have.</p>
+  </section>
+
+  <section>
+    <h2>Motion budget</h2>
+    <p>The rule for this pass: nothing animates continuously on the app's main thread. A looping indicator is a Core Animation layer the render server runs by itself; everything else plays once and stops.</p>
+    <div class="scroll"><table>
+      <tr><th>Motion</th><th>Today</th><th>Proposed</th></tr>
+      <tr><td>Running indicator, pane</td><td>SwiftUI timeline at 24 fps, body and geometry re-evaluated every frame, per session, also in tabs that are not on screen</td><td>One layer on the header's edge with a repeating position animation. No app code per frame.</td></tr>
+      <tr><td>Running indicator, sidebar</td><td>18 Hz timer redrawing each running card in full (text, tile, glow shadow)</td><td>None on the card. The glyph is static; the pane's line carries the motion.</td></tr>
+      <tr><td>Approval</td><td>Static</td><td>One 0.6 s pulse of the card's edge when it arrives, then static.</td></tr>
+      <tr><td>Context frame</td><td>n/a</td><td>Stroke end animates 0.3 s when the number changes.</td></tr>
+      <tr><td>Clock</td><td>Timer every second</td><td>Timer aligned to the minute.</td></tr>
+      <tr><td>Selection, focus sweep, sidebar slide, tab arrival</td><td>As built</td><td>Unchanged.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Decisions I need from you</h2>
+    <ol class="ask-list">
+      <li><b>Tool details in the sidebar.</b> Show tool name and file name (as drawn), or state only as today?</li>
+      <li><b>Status line wrapper.</b> OK for Ghostty X to wrap your Claude Code status line command to read context and cost? Without it the context frame, pie and cost are not available.</li>
+      <li><b>Load sparkline.</b> Retire it to an off-by-default setting, or keep it beside the fleet bar?</li>
+      <li><b>Agents overview.</b> Build the <code>⌘⇧A</code> panel in this pass, or land the card, header and status line first?</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+const C={blue:'#5ab8ff',violet:'#9d8cff',teal:'#4fe3c1',green:'#5fe3a8',amber:'#ffc35a',red:'#ff6f91',idle:'rgba(221,227,240,.45)'};
+const S={
+  running:{g:'▸',c:C.blue,l:'Running'}, approval:{g:'!',c:C.amber,l:'Needs approval'},
+  done:{g:'✓',c:C.green,l:'Done'}, ready:{g:'·',c:C.idle,l:'Ready'},
+  compact:{g:'⟳',c:C.violet,l:'Compacting'}, error:{g:'×',c:C.red,l:'Stopped'}
+};
+const TABS=[
+  {t:'api-service',d:'~/work/api',c:C.blue},
+  {t:'ghostty-x',d:'~/ZERO/ghostty-X',c:C.violet},
+  {t:'release-tools',d:'~/work/release',c:C.teal},
+  {t:'logs',d:'~/work/api/logs',c:C.green}
+];
+const A={
+  api:{p:'Claude',s:'running',tool:'Bash',arg:'npm test auth',el:'0:48',ctx:31,model:'sonnet',mode:'default',cost:'0.42',tok:'62k',add:38,del:4,subs:''},
+  gx:{p:'Claude',s:'running',tool:'Edit',arg:'RoundedTerminalTabBar.swift',el:'2:14',ctx:62,model:'opus',mode:'accept edits',cost:'1.84',tok:'124k',add:212,del:40,subs:'rrd',tasks:[3,7]},
+  rel:{p:'Codex',s:'done',el:'4m',ctx:null,model:'gpt-5',mode:'default',subs:''}
+};
+const SCN={
+  shells:{label:'Shells only',sel:0,agents:[null,null,null,null]},
+  working:{label:'Agents working',sel:1,agents:[A.api,A.gx,A.rel,null]},
+  approval:{label:'Needs approval',sel:1,agents:[A.api,A.gx,{...A.rel,s:'approval',tool:'Bash',arg:'git push --force-with-lease',el:'0:21'},null]},
+  fanout:{label:'Parallel subagents',sel:1,agents:[A.api,{...A.gx,tool:'Agent',arg:'5 running',subs:'rrrrrdd',tasks:[4,9],el:'6:02',ctx:71,tok:'142k',cost:'3.10'},A.rel,null],
+    sub:[['Explore','Grep  "TimelineView"','0:41'],['Explore','Read  SplitView.swift','0:39'],['general-purpose','WebFetch  ghostty.org/docs','1:12'],['Plan','Read  AGENTS.md','0:18'],['code-review','Bash  git diff','0:07']]},
+  full:{label:'Context nearly full',sel:1,agents:[A.api,{...A.gx,s:'compact',tool:'',arg:'',ctx:93,tok:'186k',cost:'4.76',el:'11:30'},A.rel,null]}
+};
+let scn='working', sel=SCN[scn].sel, rail=false;
+
+const ctxColor=p=>p>=90?C.red:p>=75?C.amber:null;
+function frame(p,tint){ // rounded-rect outline that fills with context use
+  if(p==null) return '';
+  const col=ctxColor(p)||tint;
+  return `<svg viewBox="0 0 36 36" aria-hidden="true"><rect x="1.5" y="1.5" width="33" height="33" rx="10" fill="none" stroke="rgba(221,227,240,.1)" stroke-width="1.5"/><rect x="1.5" y="1.5" width="33" height="33" rx="10" fill="none" stroke="${col}" stroke-width="1.8" stroke-linecap="round" pathLength="100" stroke-dasharray="${p} 100"/></svg>`;
+}
+function pie(p){
+  if(p==null) return '';
+  const col=ctxColor(p)||C.idle;
+  return `<span class="pie" title="Context ${p}%"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.3" fill="none" stroke="rgba(221,227,240,.18)" stroke-width="1"/><circle cx="6" cy="6" r="2.65" fill="none" stroke="${col}" stroke-width="5.3" pathLength="100" stroke-dasharray="${p} 100" transform="rotate(-90 6 6)"/></svg><span style="color:${ctxColor(p)||'inherit'}">${p}%</span></span>`;
+}
+function pips(s){
+  if(!s) return '';
+  const shown=[...s].slice(0,5).map(x=>`<i class="${x}"></i>`).join('');
+  return `<span class="pips" title="${s.length} subagents">${shown}${s.length>5?'+'+(s.length-5):''}</span>`;
+}
+function act(a){
+  if(!a) return '';
+  const st=S[a.s];
+  if(a.s==='running'||a.s==='approval') return `<em>${a.tool}</em>&nbsp; ${a.arg}`;
+  if(a.s==='done') return `Done · ${a.el} ago`;
+  return st.l;
+}
+function card(tab,i,a,selected,extra=''){
+  const st=a&&S[a.s];
+  const time=a&&(a.s==='running'||a.s==='approval'||a.s==='compact')?`<time>${a.el}</time>`:`<kbd>⌘${i+1}</kbd>`;
+  const line2=a?`<span class="gl" style="color:${st.c}">${st.g}</span><span class="act" style="${a.s==='approval'?'color:'+C.amber:''}">${act(a)}</span>${pips(a.subs)}`
+               :`<span class="gl">·</span><span class="act">${tab.d}</span>`;
+  const label=`${tab.t}${a?', '+a.p+' '+st.l:''}`;
+  return `<button class="card ${a&&a.s==='approval'?'approval':''}" style="--tint:${tab.c}" aria-selected="${selected}" data-i="${i}" title="${label}" aria-label="${label}">
+    <span class="tile">${frame(a&&a.ctx,tab.c)}<b>0${i+1}</b></span>
+    <span class="tx"><span class="r1"><b>${tab.t}</b>${time}</span><span class="r2">${line2}</span></span>${extra}</button>`;
+}
+function fleet(agents){
+  const live=agents.filter(Boolean);
+  const n=k=>live.filter(a=>a.s===k).length;
+  const parts=[[n('approval'),'waiting'],[n('running')+n('compact'),'running'],[n('done'),'done']].filter(x=>x[0]).map(x=>x[0]+' '+x[1]);
+  const order=['approval','running','compact','done','ready','error'];
+  const segs=[...live].sort((a,b)=>order.indexOf(a.s)-order.indexOf(b.s)).map(a=>`<i style="background:${S[a.s].c}"></i>`).join('')||'<i></i>';
+  return `<div class="fleet" style="position:relative"><span class="mark" style="right:8px;top:-9px">5</span>
+    <div class="h">AGENTS<span>${String(live.length).padStart(2,'0')}</span></div><div class="seg">${segs}</div>
+    <div class="sum">${parts.join(' · ')||'No agent sessions'}</div>
+    ${n('approval')?`<button class="jump" id="jump">! <span>Next approval</span><kbd>⌃⇧A</kbd></button>`:''}</div>`;
+}
+function header(tag,tab,a,focus){
+  const st=a&&S[a.s];
+  const steps=a&&a.tasks?`<span class="steps" title="Tasks ${a.tasks[0]} of ${a.tasks[1]}">${Array.from({length:a.tasks[1]},(_,k)=>`<i class="${k<a.tasks[0]?'on':''}"></i>`).join('')}</span><span>${a.tasks[0]}/${a.tasks[1]}</span>`:'';
+  const hair=!a?'':a.s==='running'||a.s==='compact'?'<span class="hair run"></span>':a.s==='approval'?'<span class="hair wait"></span>':'';
+  const mid=a?`<span class="who">${a.p==='Claude'?'✦':'‹/›'} ${a.p}</span><span class="gl" style="color:${st.c}">${st.g}</span><span class="act">${act(a)}</span>`
+             :`<span class="act">${tab.d}</span>`;
+  return `<div class="ph"><span class="tag">${tag}</span>${mid}<span class="sp"></span>${steps}${a?pips(a.subs).replace('class="pips"','class="pips" style="margin:0"'):''}${a?pie(a.ctx):''}<span>${focus?'118×34':'92×34'}</span>${hair}</div>`;
+}
+function status(tab,a){
+  if(!a) return `<span class="st" style="color:${C.green}"><i></i>exit 0</span><span class="v">npm run dev · 3.2s</span><span class="sp"></span>
+    <span><span class="key">⌘T</span>new tab</span><span><span class="key">⌘D</span>split</span><span><span class="key">⇧↑</span>pick block</span><span><span class="key">⌃F</span>fold all</span><span class="sp"></span><span>pane A of 2</span><span class="v">14:32</span>`;
+  const st=S[a.s], on=Math.round((a.ctx||0)/10), col=ctxColor(a.ctx||0)||C.blue;
+  const cells=a.ctx==null?'<span>context n/a</span>':`<span>CTX<span class="cells">${Array.from({length:10},(_,k)=>`<i style="${k<on?'background:'+col:''}"></i>`).join('')}</span><span class="v" style="color:${ctxColor(a.ctx)||''}">${a.ctx}%</span> ${a.tok}</span>`;
+  return `<span class="st" style="color:${st.c}"><i></i>${st.l}${a.el&&a.s!=='done'?' '+a.el:''}</span><span class="v">${a.model}</span><span class="chip">${a.mode}</span>${cells}
+    ${a.cost?`<span class="v">$${a.cost}</span><span><span style="color:${C.green}">+${a.add}</span> <span style="color:${C.red}">−${a.del}</span></span>`:''}
+    <span class="sp"></span><span>pane A of 2</span><span>118×34</span><span class="v">14:32</span>`;
+}
+function terminal(a,tab){
+  if(!a) return `<p><span class="bl">${tab.d}</span> ❯ <span class="hi">npm run dev</span></p><p>ready on http://localhost:3000</p><p>&nbsp;</p><p><span class="bl">${tab.d}</span> ❯ <span class="hi">▍</span></p>`;
+  if(a.s==='approval') return `<p class="hi">● I'll push the release branch.</p><div class="ask"><p>Bash  git push --force-with-lease origin release</p><p style="opacity:.75">1 Yes &nbsp; 2 Yes, don't ask again &nbsp; 3 No</p></div>`;
+  if(a.s==='compact') return `<p class="hi">● Updated the tab cell drawing.</p><p class="vi">⟳ Compacting conversation…</p>`;
+  if(a.s==='done') return `<p class="hi">● Tagged v0.9.2 and updated the changelog.</p><p>&nbsp;</p><p>❯ <span class="hi">▍</span></p>`;
+  if(a.tool==='Agent') return `<p class="hi">● Running 5 agents in parallel…</p><p>&nbsp; ⎿ Explore · Grep "TimelineView"</p><p>&nbsp; ⎿ Explore · Read SplitView.swift</p><p>&nbsp; ⎿ general-purpose · WebFetch</p><p>&nbsp; ⎿ Plan · Read AGENTS.md</p><p>&nbsp; ⎿ code-review · Bash git diff</p>`;
+  return `<p class="hi">● ${a.tool==='Edit'?'Moving the activity state into the pane header.':'Running the auth tests.'}</p><p>&nbsp; <span class="bl">${a.tool}</span>(${a.arg})</p><p>&nbsp; ⎿ <span class="ok">${a.tool==='Edit'?'Updated with 14 additions and 31 removals':'42 passed'}</span></p><p>&nbsp;</p><p class="am">✻ Working… (${a.el})</p>`;
+}
+function render(){
+  const s=SCN[scn], tab=TABS[sel], a=s.agents[sel];
+  const off=s.agents.findIndex((x,i)=>x&&x.s==='approval'&&i!==sel);
+  const win=document.getElementById('win');
+  win.className='win'+(rail?' rail':'');
+  win.innerHTML=`
+  <div class="tbar"><span class="lights"><i></i><i></i><i></i></span>
+    <span class="cap"><span class="no" style="background:${tab.c}">0${sel+1}</span><b>${tab.t}</b><span>/ ${tab.d}</span></span>
+    ${off>=0?`<button class="attn" id="attn" style="position:relative">! ${TABS[off].t} needs approval<span class="mark" style="right:-7px;top:-8px">7</span></button>`:''}
+    <span class="tact"><i>◫</i><i>⊟</i><i>⌘</i></span></div>
+  <div class="body">
+    <div class="side">
+      <div class="shead"><span>SESSIONS</span><span class="n">0${TABS.length}</span><button class="tg" id="tg" aria-label="${rail?'Expand':'Collapse'} sidebar">${rail?'»':'«'}</button></div>
+      <div class="cards">${TABS.map((t,i)=>card(t,i,s.agents[i],i===sel,
+        i===sel&&!rail?'<span class="mark" style="left:-5px;top:-6px">1</span><span class="mark" style="left:118px;bottom:-7px">2</span>'+(s.agents[i]&&s.agents[i].subs?'<span class="mark" style="right:-6px;bottom:-7px">3</span>':''):'')).join('')}</div>
+      <div class="add">+ <span>New session</span></div>
+      ${fleet(s.agents)}
+    </div>
+    <div class="work">
+      <div class="pane focus" style="--tint:${tab.c}"><span class="mark" style="left:46%;top:14px">4</span>${header('A',tab,a,true)}<div class="term">${terminal(a,tab)}</div></div>
+      <div class="pane" style="--tint:${tab.c}">${header('B',{d:tab.d},null,false)}<div class="term">${terminal(null,tab)}</div></div>
+    </div>
+  </div>
+  <div class="sbar" style="position:relative"><span class="mark" style="left:38%;top:-9px">6</span>${status(tab,a)}</div>`;
+  win.querySelectorAll('.side .card').forEach(b=>b.onclick=()=>{sel=+b.dataset.i;render()});
+  document.getElementById('tg').onclick=()=>{rail=!rail;render()};
+  const go=()=>{const i=s.agents.findIndex(x=>x&&x.s==='approval');if(i>=0){sel=i;render()}};
+  for(const id of ['jump','attn']){const el=document.getElementById(id);if(el)el.onclick=go}
+  overview(s);
+}
+function overview(s){
+  const rows=TABS.map((t,i)=>[t,i,s.agents[i]]).filter(r=>r[2]);
+  document.getElementById('ov').innerHTML=`<div class="oh">AGENTS · ${rows.length}<kbd>⌘⇧A</kbd></div>`+(rows.map(([t,i,a])=>{
+    const st=S[a.s];
+    const sub=(i===SCN[scn].sel&&s.sub&&a.subs)?`<div class="osub">${s.sub.map(x=>`<div><span style="color:${C.blue}">▸</span><em>${x[0]}</em><span>${x[1]}</span><span>${x[2]}</span></div>`).join('')}<div><span>✓</span><span>2 finished</span></div></div>`:'';
+    return `<div class="orow" style="--tint:${t.c}"><span class="tile">${frame(a.ctx,t.c)}<b>0${i+1}</b></span>
+      <span class="tx"><span class="r1"><b>${t.t}</b></span><span class="r2"><span class="gl" style="color:${st.c}">${st.g}</span><span class="act">${act(a)}</span>${pips(a.subs)}</span></span>
+      <span class="meta">${a.p} · ${a.model}<br>${a.ctx==null?'context n/a':a.ctx+'% · '+a.tok}${a.cost?' · $'+a.cost:''}</span></div>${sub}`;
+  }).join('')||'<div class="orow" style="grid-template-columns:1fr;color:var(--faint)">No agent sessions. Start one with <code>claude</code> in any pane.</div>');
+}
+// scenario switch
+const sw=document.getElementById('switch');
+sw.innerHTML=Object.entries(SCN).map(([k,v])=>`<button data-k="${k}" aria-pressed="${k===scn}">${v.label}</button>`).join('');
+sw.onclick=e=>{const b=e.target.closest('button');if(!b)return;scn=b.dataset.k;sel=SCN[scn].sel;[...sw.children].forEach(x=>x.setAttribute('aria-pressed',x===b));render()};
+// card states
+const demo=[
+  ['Shell','No agent: the directory, as today.',null,false],
+  ['Ready','Session open, waiting for a prompt.',{p:'Claude',s:'ready',ctx:8,subs:''},false],
+  ['Running','Tool and target, turn time trailing.',A.gx,true],
+  ['Running with subagents','Pips for each one; five shown, the rest counted.',{...A.gx,tool:'Agent',arg:'5 running',subs:'rrrrrdd',el:'6:02',ctx:71},false],
+  ['Needs approval','Amber edge and wash. The only state that asks for you.',{...A.rel,s:'approval',tool:'Bash',arg:'git push --force',el:'0:21',ctx:44},false],
+  ['Done, not yet seen','Stays green until you visit the pane.',{...A.rel,ctx:44},false],
+  ['Compacting','Frame is red past 90%.',{...A.gx,s:'compact',ctx:93,el:'11:30',subs:''},false],
+  ['Stopped on error','From StopFailure; the turn ended on an API error.',{p:'Claude',s:'error',ctx:52,subs:''},false]
+];
+document.getElementById('states').innerHTML=demo.map(([name,note,a,on],i)=>`<div class="cell">${card(TABS[i%4],i%4,a,on)}<small><b>${name}.</b> ${note}</small></div>`).join('');
+// strips
+const strip=(h,sb)=>`<div class="strip"><div class="pane focus" style="--tint:${C.violet};border:0;border-radius:0">${h}</div>${sb?`<div class="sbar">${sb}</div>`:''}</div>`;
+document.getElementById('strips').innerHTML=[
+  strip(header('A',TABS[1],A.gx,true),status(TABS[1],A.gx)),
+  strip(header('A',TABS[2],{...A.rel,s:'approval',tool:'Bash',arg:'git push --force-with-lease',el:'0:21'},true),status(TABS[2],{...A.rel,s:'approval',el:'0:21'})),
+  strip(header('A',TABS[1],{...A.gx,s:'compact',ctx:93,tok:'186k',el:'11:30',subs:''},true),status(TABS[1],{...A.gx,s:'compact',ctx:93,tok:'186k',cost:'4.76',el:'11:30'})),
+  strip(header('A',TABS[0],null,true),status(TABS[0],null))
+].join('');
+render();
+</script>

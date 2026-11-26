@@ -14,7 +14,7 @@ final class TabBarSettingsController: NSWindowController, NSWindowDelegate {
             contentRect: NSRect(x: 0, y: 0, width: 940, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: true)
-        window.title = "Tab Bar"
+        window.title = "Ghostty X Settings"
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 820, height: 520)
         window.setFrameAutosaveName("GhosttyXTabBarSettings")
@@ -46,11 +46,20 @@ final class PreviewTabModel: RoundedTerminalTabModel {
         var title: String
         var color: TerminalTabColor
         var slot: Int?
-        init(_ title: String, _ color: TerminalTabColor = .none) { self.title = title; self.color = color }
+        var activity: AgentActivity.Summary
+        init(_ title: String, activity: AgentActivity.Session? = nil) {
+            self.title = title
+            self.color = .none
+            self.activity = .init(sessions: activity.map { [$0] } ?? [])
+        }
     }
 
     private var items: [Item] = [
-        Item("zsh"), Item("npm run dev"), Item("~/projects/api"), Item("logs"), Item("claude"),
+        Item("zsh"), Item("npm run dev"), Item("logs"),
+        Item("api-service", activity: .init(
+            provider: .claude, phase: .running, tool: "Edit", target: "routes.swift",
+            subagents: [.init(id: "1", type: "Explore"), .init(id: "2", type: "Plan", done: true)], context: 62)),
+        Item("release-tools", activity: .init(provider: .codex, phase: .approval, tool: "Bash", target: "git push")),
     ]
     private var selected = 0
     private var counter = 2
@@ -73,7 +82,7 @@ final class PreviewTabModel: RoundedTerminalTabModel {
         tabs = items.enumerated().map { index, item in
             Tab(id: ObjectIdentifier(item), window: Weak(nil), title: item.title,
                 color: item.color, selected: index == selected, autoColor: item.slot,
-                subtitle: Self.directories[index % Self.directories.count])
+                subtitle: Self.directories[index % Self.directories.count], activity: item.activity)
         }
     }
 
@@ -188,6 +197,10 @@ struct TabBarSettingsView: View {
                 }
             }
             if store.settings.isSignal {
+                AgentActivitySettings(
+                    groupSessions: settings.groupAgentSessions,
+                    showApprovalShortcut: settings.showApprovalShortcut,
+                    toolDetails: settings.agentToolDetails)
                 Section("Terminal") {
                     Toggle("Signal Void colors", isOn: settings.signalColors)
                         .help("Applies the dark Signal palette over your theme. Your config file is not changed.")

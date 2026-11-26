@@ -9,16 +9,70 @@ can fold and copy inside the terminal.
 [Watch the 4K walkthrough (52 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough.mp4) ·
 [Download the offline HTML walkthrough (ZIP)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough-html.zip)
 
-The walkthrough and screenshots render fictional terminal sessions over the
-teal cutting-mat wallpaper at 3840 × 2496. Select a close-up to open the full desktop screenshot. Open the downloaded HTML file to jump directly to any
+The walkthrough and layout close-ups render fictional terminal sessions over the
+teal cutting-mat wallpaper at 3840 × 2496, and the live agent-activity captures
+below are framed over the same cutting-mat wallpaper. Select any image to open
+the full screenshot, or open the downloaded HTML file to jump directly to any
 tab position, prompt style, or command-block action.
 
 ## Sidebars and tabs
 
-Select **Tab Bar… → Position** to move the session strip. Signal shows numbered
+Select **Ghostty X Settings… → Layout → Position** to move the session strip. Signal shows numbered
 session cards in the left or right sidebar and compact tabs at the top or bottom.
 Use the sidebar button or **Control-S** at the shell prompt to collapse the
 sidebar to numbered tiles.
+
+### Claude Code and Codex activity
+
+The Signal interface treats a Claude Code or Codex session as a session of its
+own, in the space the chrome already has:
+
+- **Session card.** The second line shows the state and the tool in use
+  (`▸ Edit routes.swift`). The turn's time follows the title, the outline
+  around the tile fills with the context window, and each subagent is a dot.
+- **Pane header.** Who is working and on what, with task steps, subagent dots
+  and a context pie. Its lower edge moves while the agent works and turns
+  amber while it waits. Nothing is added above the terminal, so a session
+  starting or ending never changes the terminal's size.
+- **Status line.** Follows the focused pane: state and turn time, model,
+  permission mode, context, tokens, cost, files and lines changed.
+- **Sidebar foot.** One segment per session and **Next Approval**. A pill in
+  the titlebar appears while a session in another tab is waiting.
+- **Agents overview.** <kbd>⌘⇧A</kbd> lists every session in every tab with
+  its subagents. <kbd>⌃⇧A</kbd> goes to the next one waiting for an answer.
+
+Amber means **Needs approval**, cyan **Running**, violet **Compacting**, red
+**Stopped on error**, and green **Done** until you have looked at the pane.
+Approvals are handled in the original CLI prompt.
+
+[![Three sessions in the sidebar: one running with subagents, one waiting for approval, one ready](docs/previews/agents/agents-1-working.png)](docs/previews/agents/agents-1-working.png)
+
+| Agents overview | Top tabs |
+| --- | --- |
+| [![The agents overview panel listing three sessions with their subagents](docs/previews/agents/agents-4-overview.png)](docs/previews/agents/agents-4-overview.png) | [![The same sessions with the tab bar at the top](docs/previews/agents/agents-5-top.png)](docs/previews/agents/agents-5-top.png) |
+
+[Open the interactive preview](docs/previews/signal-agents.html)
+
+In **Ghostty X Settings… → Agent Activity**, enable Claude Code, Codex, or both. The
+setup uses Python 3.9 or newer. You can also enable the hooks from this
+checkout:
+
+```sh
+python3 scripts/agent-activity.py enable claude
+python3 scripts/agent-activity.py enable codex
+```
+
+Launch `claude` or `codex` in a pane opened by a Ghostty X build with agent
+activity support. In Codex, review and trust the Ghostty X hooks in
+`/hooks`. The hook passes the provider's state to the pane through a local
+temporary directory: the phase, the tool's name and one word about its target
+(a file's name, a command's first word), never a prompt, a path or a full
+command. To remove the hooks, run the same commands with `disable`. Enable
+again after updating Ghostty X, since newer versions follow more events.
+
+Context, tokens and cost come from Claude Code's status line. **Context and
+cost → Enable** (or `usage-enable claude`) records them and then runs the
+status line command you already had; `usage-disable` puts it back.
 
 | Left sidebar | Right sidebar |
 | --- | --- |
@@ -34,7 +88,7 @@ sidebar to numbered tiles.
 
 ## Prompt styles
 
-Choose **Tab Bar… → Terminal → Prompt style** to change the zsh prompt.
+Choose **Ghostty X Settings… → Terminal → Prompt style** to change the zsh prompt.
 
 ### Breadcrumb Rail
 
@@ -82,11 +136,12 @@ Set it in your Ghostty configuration:
 macos-titlebar-style = tabs
 ```
 
-Open **Tab Bar…** beside **Open Config** in the app menu. Choose **Signal** or
+Open **Ghostty X Settings…** beside **Open Config** in the app menu. Choose **Signal** or
 **Classic**, configure tab placement and sizing, and adjust pane headers,
-focus effects and status hints. The **Terminal** section controls the zsh
+focus effects, status hints, and **Agent Activity** hooks. The **Terminal** section controls the zsh
 Signal prompt, command blocks and optional Signal Void colors. Window opacity
-and blur follow your Ghostty configuration.
+and blur follow your Ghostty configuration, and the Quick Terminal derives a
+matching Signal accent from your active screen wallpaper when available.
 
 The app builds as `GhosttyX.app` with bundle identifier
 `com.amsynist.ghosttyx`. See the [build and implementation notes](GHOSTTY_X.md)

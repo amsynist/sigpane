@@ -1864,6 +1864,7 @@ extension Ghostty {
                 // which will rule out exit codes on launch
                 guard surfaceView.window != nil, v.timetime_ms > 0 else { return false }
                 guard let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config else { return false }
+                DispatchQueue.main.async { [weak surfaceView] in surfaceView?.agentActivity.clear() }
                 surfaceView.setChildExitedMessage(.init(v, threshold: config.abnormalCommandExitRuntime))
                 return true
             default:

@@ -1042,14 +1042,29 @@ class AppDelegate: NSObject,
         TabBarSettingsController.shared.show()
     }
 
-    /// Adds "Tab Bar…" right after "Open Config" in the app menu.
+    /// Adds the Ghostty X settings window after "Open Config" in the app menu.
     private func installTabBarSettingsMenuItem() {
         guard let openConfig = menuOpenConfig, let menu = openConfig.menu,
               !menu.items.contains(where: { $0.action == #selector(openTabBarSettings(_:)) }) else { return }
-        let item = NSMenuItem(title: "Tab Bar…", action: #selector(openTabBarSettings(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: "Ghostty X Settings…", action: #selector(openTabBarSettings(_:)), keyEquivalent: "")
         item.target = self
         item.setImageIfDesired(systemSymbolName: "rectangle.topthird.inset.filled")
         menu.insertItem(item, at: menu.index(of: openConfig) + 1)
+
+        // Every agent session at a glance, and a key that goes to the next one waiting
+        // for an answer. That key is only taken while one is waiting.
+        let overview = NSMenuItem(
+            title: "Agents Overview", action: #selector(AgentOverviewController.toggle(_:)), keyEquivalent: "a")
+        overview.keyEquivalentModifierMask = [.command, .shift]
+        overview.target = AgentOverviewController.shared
+        overview.setImageIfDesired(systemSymbolName: "sparkles.rectangle.stack")
+        let approval = NSMenuItem(
+            title: "Next Approval", action: #selector(AgentOverviewController.nextApproval(_:)), keyEquivalent: "a")
+        approval.keyEquivalentModifierMask = [.control, .shift]
+        approval.target = AgentOverviewController.shared
+        approval.setImageIfDesired(systemSymbolName: "exclamationmark.circle")
+        menu.insertItem(overview, at: menu.index(of: item) + 1)
+        menu.insertItem(approval, at: menu.index(of: overview) + 1)
     }
 
     @IBAction func reloadConfig(_ sender: Any?) {

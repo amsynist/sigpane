@@ -170,6 +170,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     override func surfaceTreeDidChange(from: SplitTree<Ghostty.SurfaceView>, to: SplitTree<Ghostty.SurfaceView>) {
         super.surfaceTreeDidChange(from: from, to: to)
+        if from.flatMap({ $0.agentActivity.summary.sessions }) != to.flatMap({ $0.agentActivity.summary.sessions }) {
+            NotificationCenter.default.post(name: AgentActivityChannel.didChange, object: self)
+        }
 
         // Whenever our surface tree changes in any way (new split, close split, etc.)
         // we want to invalidate our state.

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FA112500AC71000000000001 /* agent-activity.py in Resources */ = {isa = PBXBuildFile; fileRef = FA112500AC71000000000002 /* agent-activity.py */; };
 		29C15B1D2CDC3B2900520DD4 /* bat in Resources */ = {isa = PBXBuildFile; fileRef = 29C15B1C2CDC3B2000520DD4 /* bat */; };
 		55154BE02B33911F001622DC /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = 55154BDF2B33911F001622DC /* ghostty */; };
 		552964E62B34A9B400030505 /* vim in Resources */ = {isa = PBXBuildFile; fileRef = 552964E52B34A9B400030505 /* vim */; };
@@ -66,6 +67,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FA112500AC71000000000002 /* agent-activity.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = ../scripts/agent-activity.py; sourceTree = SOURCE_ROOT; };
 		29C15B1C2CDC3B2000520DD4 /* bat */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bat; path = "../zig-out/share/bat"; sourceTree = "<group>"; };
 		3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyReleaseLocal.entitlements; sourceTree = "<group>"; };
 		55154BDF2B33911F001622DC /* ghostty */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ghostty; path = "../zig-out/share/ghostty"; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 			children = (
 				A571AB1C2A206FC600248498 /* Ghostty-Info.plist */,
 				8F3A9B4B2FA6B88000A18D13 /* Ghostty.sdef */,
+				FA112500AC71000000000002 /* agent-activity.py */,
 				A5B30538299BEAAB0047F10C /* Assets.xcassets */,
 				A553F4122E06EB1600257779 /* Ghostty.icon */,
 				A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */,
@@ -391,6 +394,7 @@
 				29C15B1D2CDC3B2900520DD4 /* bat in Resources */,
 				A586167C2B7703CC009BDB1D /* fish in Resources */,
 				8F3A9B4C2FA6B88000A18D13 /* Ghostty.sdef in Resources */,
+				FA112500AC71000000000001 /* agent-activity.py in Resources */,
 				55154BE02B33911F001622DC /* ghostty in Resources */,
 				A546F1142D7B68D7003B11A0 /* locale in Resources */,
 				A5985CE62C33060F00C57AD3 /* man in Resources */,

@@ -268,3 +268,61 @@ showing or folded (or the command itself when it printed nothing).
   (builds 42 to 48). Not covered: real clicks and wheel scrolling
   (the demo calls the same functions the buttons do), resizing with blocks open, bash and fish
   prompts (they get boxes and folding but keep their own prompt), very long sessions.
+
+## Agent sessions
+
+The chrome treats a Claude Code or Codex session as a session of its own, in the space the
+chrome already had (`docs/previews/signal-agents.html` is the design).
+
+- **Where the state comes from.** Each pane gives its shell a private folder
+  (`GHOSTTY_AGENT_ACTIVITY_DIR`, mode 0700, removed with the pane). `scripts/agent-activity.py`
+  is registered as a hook and writes one small file per provider there; the app watches the
+  folder, with no polling. Settings ▸ Agent Activity turns the hooks on per provider. Enable
+  again after updating: this version follows more events (subagents, tasks, compaction, errors,
+  notifications).
+- **What is stored.** The phase, the tool's name and one safe word about its target (a file's
+  own name, a command's first word and subcommand, a host, an agent type), when the turn
+  started, the model, the permission mode, a dot per subagent and a count of tasks. Never a
+  prompt, a path, a full command or anything from a transcript. "Show the tool and file an
+  agent is using" off (`GHOSTTY_AGENT_ACTIVITY_DETAILS=0`, panes opened from then on) stores
+  the phase alone.
+- **Context and cost.** Claude Code gives these only to its status line command. "Context and
+  cost ▸ Enable" puts the script in front of the status line command you had (kept in
+  `ghostty-x-statusline.json` beside Claude's settings), records the numbers and then runs
+  yours, so the status line looks as it did. Disable puts the original back.
+- **Session card.** Second line: a glyph for the state, then the tool and its target (the
+  directory when there is no agent). The turn's time trails the title. The outline around the
+  tile fills with the context window, amber from 75% and red from 90%. One dot per subagent,
+  filled while it runs. A collapsed sidebar and the chips of top and bottom strips show the
+  state as a dot on the tile.
+- **Pane header.** The separate bar above the terminal is gone: it changed the terminal's row
+  count whenever a session started or ended. The header says who is working and on what, with
+  task steps, subagent dots and a context pie, and its lower edge shows working (a bar moved by
+  Core Animation) or waiting (solid amber).
+- **Sidebar foot.** One segment per session in the window's tabs, most urgent first, a line of
+  counts, and Next Approval. The load sparkline is off unless "System load" is turned on.
+- **Status line.** Follows the focused pane: state and turn time, model, permission mode,
+  context cells, tokens, cost, lines changed. For a shell: title and key hints. The clock
+  shows minutes and is drawn once a minute.
+- **Titlebar.** A pill appears only while a session in another tab is waiting for an answer;
+  a click goes to it.
+- **Agents overview.** Command-Shift-A (app menu ▸ Agents Overview) lists every session in
+  every tab and window with its subagents; arrows pick, Return goes to the pane. Control-Shift-A
+  goes to the next session waiting for an answer, and is only taken while one is.
+- **Done means unseen.** A finished turn reads Done until its pane is the focused pane of the
+  key window, then Ready.
+- **Cost.** Nothing animates on the main thread while an agent works. Measured on one pane,
+  median of 20 one-second readings: a running session cost 6.2% of a core before and 0.6%
+  after; idle went from 1.0% to 0.6%. While a turn's time is on screen one shared timer ticks
+  once a second (`AgentClock`), and stops when nothing shows a time. Strips of tabs that are
+  behind skip title and agent updates and catch up as they come forward. Status folders left
+  by a copy of the app that has quit are removed at the next launch.
+- **Checked by** `GHOSTTYX_SIGNAL_DEMO_SCRIPT=agents` (with `GHOSTTYX_SIGNAL_DEMO=<folder>`):
+  three tabs with a running, a waiting and a finished session, photographed in the sidebar,
+  the collapsed rail, compacting, the overview and a top strip. Make
+  `/tmp/ghostty-x-demo/{api-service,release-tools,docs-site}` first: the demo's tabs sit in
+  them, so the cards have names. The README's pictures were taken from this run with
+  `screencapture -l` (`--background-opacity=1` so the window is not see-through) and framed over
+  the teal cutting-mat wallpaper. The hook script was run
+  against made-up events in scratch folders. Not checked: a real Claude Code or Codex session
+  end to end, and the Settings buttons, which edit `~/.claude/settings.json`.

@@ -229,6 +229,8 @@ extension Ghostty {
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
 
+        let agentActivity = AgentActivityChannel()
+
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
 
@@ -384,7 +386,11 @@ extension Ghostty {
             ) { [weak self] event in self?.localEventHandler(event) }
 
             // Setup our surface. This will also initialize all the terminal IO.
-            let surface_cfg = baseConfig ?? SurfaceConfiguration()
+            var surface_cfg = baseConfig ?? SurfaceConfiguration()
+            surface_cfg.environmentVariables[AgentActivityChannel.environmentKey] = agentActivity.directory?.path
+            if !TabBarSettingsStore.shared.settings.agentToolDetails {
+                surface_cfg.environmentVariables[AgentActivityChannel.detailsKey] = "0"
+            }
             let surface = surface_cfg.withCValue(view: self) { surface_cfg_c in
                 ghostty_surface_new(app, &surface_cfg_c)
             }

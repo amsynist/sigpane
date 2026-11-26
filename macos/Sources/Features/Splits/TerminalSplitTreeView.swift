@@ -182,7 +182,9 @@ private struct TerminalSplitLeaf: View {
                     focused: focused,
                     tint: tint,
                     foreground: Color(nsColor: theme.foreground),
-                    cornerInset: signal && settings.focusCorners ? radius : 0)
+                    cornerInset: signal && settings.focusCorners ? radius : 0,
+                    channel: surfaceView.agentActivity,
+                    animations: settings.animations)
             }
             GeometryReader { geometry in
                 Ghostty.InspectableSurface(
@@ -259,8 +261,12 @@ private struct TerminalSplitLeaf: View {
         }
         .onAppear {
             lit = focused ? 1 : 0
+            // A finished turn counts as seen once its pane is the one being looked at.
+            surfaceView.agentActivity.view = surfaceView
+            surfaceView.agentActivity.isFocused = focused
         }
         .onChange(of: focused) { nowFocused in
+            surfaceView.agentActivity.isFocused = nowFocused
             light(nowFocused, settings)
         }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyXTabColorsDidShuffle)) { _ in
@@ -455,6 +461,11 @@ private struct SignalPaneHeader: View {
     /// The pane's corner radius when its corners carry focus brackets: the strip's ends
     /// keep clear of them, so its letter and buttons never sit on a bracket.
     var cornerInset: CGFloat = 0
+    /// The agent sessions in this pane. While there is one, the strip says what it is
+    /// doing, in place of the title: no bar of its own is added above the terminal, so a
+    /// session starting or ending never changes the terminal's size.
+    @ObservedObject var channel: AgentActivityChannel
+    var animations = true
 
     @State private var title = ""
     @State private var path = ""
@@ -467,21 +478,29 @@ private struct SignalPaneHeader: View {
             Text(verbatim: tag)
                 .fontWeight(.bold)
                 .foregroundColor(focused ? tint : foreground.opacity(0.5))
-            // A title that is only the directory is shown once, as the directory.
-            let titleIsDirectory = SignalText.isDirectoryTitle(title, path: path)
-            let directory = path.isEmpty ? "" : SignalText.abbreviate(path: path, components: 3)
-            Text(verbatim: titleIsDirectory ? directory : title)
-                .foregroundColor(foreground.opacity(focused ? 0.9 : 0.4))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .layoutPriority(1)
-            if !directory.isEmpty, !titleIsDirectory {
-                Text(verbatim: directory)
-                    .foregroundColor(foreground.opacity(0.3))
+            let session = channel.summary.lead
+            if let session {
+                agentSummary(session)
+            } else {
+                // A title that is only the directory is shown once, as the directory.
+                let titleIsDirectory = SignalText.isDirectoryTitle(title, path: path)
+                let directory = path.isEmpty ? "" : SignalText.abbreviate(path: path, components: 3)
+                Text(verbatim: titleIsDirectory ? directory : title)
+                    .foregroundColor(foreground.opacity(focused ? 0.9 : 0.4))
                     .lineLimit(1)
-                    .truncationMode(.head)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                if !directory.isEmpty, !titleIsDirectory {
+                    Text(verbatim: directory)
+                        .foregroundColor(foreground.opacity(0.3))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
             }
             Spacer(minLength: 4)
+            if let session {
+                agentMeters(session)
+            }
             if !size.isEmpty {
                 Text(verbatim: size)
                     .foregroundColor(foreground.opacity(0.3))
@@ -521,6 +540,23 @@ private struct SignalPaneHeader: View {
                 .fill(foreground.opacity(0.07))
                 .frame(height: 1)
         }
+        .overlay(alignment: .bottom) {
+            // The strip's lower edge says working or waiting.
+            switch channel.summary.primary {
+            case .running, .compacting:
+                AgentActivityTrack(
+                    color: (channel.summary.primary ?? .running).color, animates: animations,
+                    ratio: 0.22, duration: 1.5)
+                .frame(height: 2)
+                .accessibilityHidden(true)
+            case .approval:
+                Rectangle()
+                    .fill(Color(nsColor: AgentActivity.Phase.approval.color))
+                    .frame(height: 2)
+            default:
+                EmptyView()
+            }
+        }
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
         .onReceive(surfaceView.$title.removeDuplicates()) { title = SignalText.printable($0) }
@@ -528,6 +564,81 @@ private struct SignalPaneHeader: View {
         .onReceive(surfaceView.$surfaceSize.map(Self.describe).removeDuplicates()) { size = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pane \(tag)")
+    }
+
+    /// Who is working in the pane and on what: "✦ Claude ▸ Edit TabBar.swift".
+    @ViewBuilder
+    private func agentSummary(_ session: AgentActivity.Session) -> some View {
+        let phase = session.phase
+        let state = phase == .ready ? foreground.opacity(0.45) : Color(nsColor: phase.color)
+        Text(verbatim: "\(session.provider.glyph) \(session.provider.shortName)")
+            .foregroundColor(foreground.opacity(focused ? 0.6 : 0.4))
+            .lineLimit(1)
+            .fixedSize()
+        Text(verbatim: phase.glyph)
+            .fontWeight(.bold)
+            .foregroundColor(state)
+        Text(verbatim: session.activity)
+            .foregroundColor(phase == .approval ? state : foreground.opacity(focused ? 0.9 : 0.5))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .layoutPriority(1)
+            .accessibilityLabel("\(session.provider.name), \(phase.label), \(session.activity)")
+    }
+
+    /// The session's small meters: task steps, a dot per subagent, and how full the
+    /// context window is.
+    @ViewBuilder
+    private func agentMeters(_ session: AgentActivity.Session) -> some View {
+        if session.tasksTotal > 0 {
+            HStack(spacing: 1.5) {
+                ForEach(0..<min(session.tasksTotal, 12), id: \.self) { step in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(step < session.tasksDone
+                              ? Color(nsColor: AgentActivity.Phase.complete.color) : foreground.opacity(0.14))
+                        .frame(width: 6, height: 4)
+                }
+            }
+            .accessibilityHidden(true)
+            Text(verbatim: "\(session.tasksDone)/\(session.tasksTotal)")
+                .foregroundColor(foreground.opacity(0.4))
+                .fixedSize()
+                .accessibilityLabel("\(session.tasksDone) of \(session.tasksTotal) tasks done")
+        }
+        if !session.subagents.isEmpty {
+            let running = Color(nsColor: AgentActivity.Phase.running.color)
+            HStack(spacing: 3) {
+                ForEach(session.subagents.sorted { !$0.done && $1.done }.prefix(5)) { agent in
+                    Circle()
+                        .strokeBorder(agent.done ? foreground.opacity(0.32) : running, lineWidth: 1)
+                        .background(Circle().fill(agent.done ? Color.clear : running))
+                        .frame(width: 5, height: 5)
+                }
+                if session.subagents.count > 5 {
+                    Text(verbatim: "+\(session.subagents.count - 5)")
+                        .foregroundColor(foreground.opacity(0.34))
+                }
+            }
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(session.runningSubagents) of \(session.subagents.count) subagents running")
+        }
+        if let percent = session.context {
+            let warning = AgentActivity.Session.contextColor(percent).map { Color(nsColor: $0) }
+            HStack(spacing: 4) {
+                ZStack {
+                    Circle().strokeBorder(foreground.opacity(0.2), lineWidth: 1)
+                    ContextPie(share: Double(percent) / 100)
+                        .fill(warning ?? foreground.opacity(0.5))
+                }
+                .frame(width: 10, height: 10)
+                Text(verbatim: "\(percent)%")
+                    .foregroundColor(warning ?? foreground.opacity(0.4))
+            }
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Context \(percent) percent used")
+        }
     }
 
     nonisolated private static func describe(_ size: ghostty_surface_size_s?) -> String {
@@ -556,6 +667,22 @@ private struct SignalPaneHeader: View {
         SignalText.copy(text)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+    }
+}
+
+/// A pie slice from twelve o'clock, clockwise: the share of the context window in use.
+struct ContextPie: Shape {
+    var share: Double
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        path.move(to: center)
+        path.addArc(center: center, radius: min(rect.width, rect.height) / 2,
+                    startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * min(max(share, 0), 1)),
+                    clockwise: false)
+        path.closeSubpath()
+        return path
     }
 }
 

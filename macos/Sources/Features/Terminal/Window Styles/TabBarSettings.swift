@@ -166,7 +166,7 @@ struct TabBarSettings: Codable, Equatable {
     var showSubtitle = true
     var showShortcutHints = true
     /// Load average sparkline at the foot of a Signal sidebar.
-    var systemLoad = true
+    var systemLoad = false
     /// Split and command palette buttons in the titlebar.
     var titlebarActions = true
     var paneHeaders = true
@@ -178,6 +178,12 @@ struct TabBarSettings: Codable, Equatable {
     var paneRadius: Double = 10
     /// A Signal sidebar shrunk to its numbered tiles.
     var sidebarCollapsed = false
+    /// Off by default: each card says what its session is doing, and tabs keep their order.
+    var groupAgentSessions = false
+    var showApprovalShortcut = true
+    /// Let the agent hooks say which tool is in use and on what (a file's name, a
+    /// command's first word). Off, they report the state alone.
+    var agentToolDetails = true
     /// Apply the Signal Void colors over the configured theme.
     var signalColors = true
     /// Draw Ghostty X's own prompt in zsh, in place of a prompt theme such as Starship.
@@ -275,6 +281,9 @@ struct TabBarSettings: Codable, Equatable {
         signalTrace = value(.signalTrace, d.signalTrace)
         statusBar = value(.statusBar, d.statusBar)
         sidebarCollapsed = value(.sidebarCollapsed, d.sidebarCollapsed)
+        groupAgentSessions = value(.groupAgentSessions, d.groupAgentSessions)
+        showApprovalShortcut = value(.showApprovalShortcut, d.showApprovalShortcut)
+        agentToolDetails = value(.agentToolDetails, d.agentToolDetails)
         signalColors = value(.signalColors, d.signalColors)
         signalPrompt = value(.signalPrompt, d.signalPrompt)
         autoFold = value(.autoFold, d.autoFold)
@@ -444,6 +453,8 @@ enum SignalDemo {
         case burst(String, Int, @MainActor () -> Void)
         /// Switch tabs, toggle the sidebar and move the tab bar many times, quickly.
         case stress(Int)
+        /// Do something that has no step of its own.
+        case call(@MainActor () -> Void)
     }
 
     private static var steps: [Step] = []
@@ -547,7 +558,77 @@ enum SignalDemo {
             .stress(70), .wait(1.2), .shot("12-after-stress"),
             .action("goto_tab:2"), .wait(0.12), .mark("7-switching"),
         ]
+        if ProcessInfo.processInfo.environment["GHOSTTYX_SIGNAL_DEMO_SCRIPT"] == "agents" { steps = agentSteps }
         play(0)
+    }
+
+    /// A second demo: agent sessions in three tabs, in the states the chrome has to show.
+    /// The states are written the way the hook script writes them.
+    private static var agentSteps: [Step] {
+        let started = Int(Date().timeIntervalSince1970) - 134
+        let working = """
+        {"session":"a","phase":"running","tool":"Edit","target":"RoundedTerminalTabBar.swift","started":\(started),
+         "model":"Opus 5.5","mode":"acceptEdits","edited":["a","b","c"],
+         "agents":[{"id":"1","type":"Explore","tool":"Grep"},{"id":"2","type":"Plan","tool":"Read AGENTS.md"},
+                   {"id":"3","type":"Explore","done":true}],
+         "tasks":{"1":true,"2":true,"3":true,"4":false,"5":false,"6":false,"7":false},
+         "usage":{"context":62,"tokens":124000,"cost":1.84,"added":212,"removed":40}}
+        """
+        let waiting = """
+        {"session":"b","phase":"approval","tool":"Bash","target":"git push","started":\(started + 113),"model":"gpt-5"}
+        """
+        let done = """
+        {"session":"c","phase":"complete","model":"Sonnet 5.5","mode":"default",
+         "usage":{"context":7,"tokens":62000,"cost":0.42,"added":0,"removed":0}}
+        """
+        let full = working.replacingOccurrences(of: "\"running\"", with: "\"compacting\"")
+            .replacingOccurrences(of: "\"context\":62", with: "\"context\":93")
+        // Each tab sits in a folder named like a project, so the cards have names to show.
+        // (The folders are made by whoever starts the demo.)
+        func enter(_ project: String) -> [Step] {
+            [.run("cd /tmp/ghostty-x-demo/\(project)"), .wait(0.6), .action("clear_screen"), .wait(0.4)]
+        }
+        let opening: [Step] = [.change { $0 = TabBarSettings(); $0.position = .left }, .wait(2.5)]
+            + enter("api-service")
+            + [.action("new_split:right"), .wait(1.2), .action("clear_screen"), .wait(0.3),
+               .call { publish(working, as: .claude) }, .action("new_tab"), .wait(1.6)]
+            + enter("release-tools")
+            + [.call { publish(waiting, as: .codex) }, .action("new_tab"), .wait(1.6)]
+            + enter("docs-site")
+            + [.call { publish(done, as: .claude) }]
+        return opening + [
+            // The third tab's turn finished while it was being looked at, so it reads Ready.
+            .action("goto_tab:1"), .wait(1.6), .mark("agents-1-working"),
+            .idle(8),
+            .change { $0.sidebarCollapsed = true }, .wait(0.9), .mark("agents-2-rail"),
+            .change { $0.sidebarCollapsed = false }, .wait(0.9),
+            .call { publish(full, as: .claude) }, .wait(0.8), .mark("agents-3-compacting"),
+            .call { AgentOverviewController.shared.toggle(nil) }, .wait(0.9),
+            .call {
+                guard let folder, let panel = NSApp.windows.first(where: { $0.accessibilityLabel() == "Agents" }) else {
+                    trace("overview panel not found")
+                    return
+                }
+                snapshot(panel, to: folder + "/agents-4-overview-self.png")
+                FileManager.default.createFile(atPath: folder + "/agents-4-overview.mark", contents: nil)
+            }, .wait(1.8),
+            .call { AgentOverviewController.shared.toggle(nil) }, .wait(0.6),
+            .call { publish(working, as: .claude) },
+            .change { $0.position = .top }, .wait(1.4), .mark("agents-5-top"),
+            .change { $0.position = .left }, .wait(0.8),
+            .action("goto_tab:3"), .wait(1.4), .mark("agents-6-ready"),
+            .mark("agents-done"),
+        ]
+    }
+
+    /// Puts an agent state in the focused pane's status folder, as a hook would.
+    private static func publish(_ state: String, as provider: AgentActivity.Provider) {
+        guard let directory = focusedSurface()?.agentActivity.directory else {
+            trace("no status folder for the focused pane")
+            return
+        }
+        let file = directory.appendingPathComponent(provider.rawValue + ".json")
+        try? Data(state.utf8).write(to: file, options: .atomic)
     }
 
     /// The memory the app is charged with (what Activity Monitor shows), in megabytes.
@@ -724,6 +805,8 @@ enum SignalDemo {
             if let surfaceView = focusedSurface() {
                 trace("top fold pressed, peek shown=\(SignalBlockView.pressTopFold(of: surfaceView))")
             }
+        case .call(let work):
+            work()
         case .shot(let name):
             if let window = currentWindow() { snapshot(window, to: folder + "/" + name + "-self.png") }
         case .dump:

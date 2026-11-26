@@ -23,6 +23,10 @@ https://github.com/user-attachments/assets/f4074bcc-0aee-4e62-b624-99db22c3b9ba
 
 ## The Signal interface
 
+[![Sigpane workspace with session cards, Claude Code and Codex in splits, and expanded command output](docs/media/sigpane-workspace.webp)](docs/media/sigpane-workspace.webp)
+
+Screenshots show the showcase’s sample project and staged agent sessions.
+
 - **Session cards.** Each tab is a card with a numbered tile in the tab's color, its title and the focused pane's directory. A new session sweeps into place, and the selection slides from one card to the next.
 - **Titlebar.** The title is a capsule with the session's number, name and directory. Buttons at the trailing end split right, split down and open the command palette.
 - **Framed panes.** Every pane has a header with its letter, title, directory and size in cells. The focused pane has a tinted outline and corner brackets, and a trace line runs from the selected session to it.
@@ -55,6 +59,8 @@ A Claude Code or Codex session is treated as a session of its own, in the space 
 
 ### Approvals
 
+[![Codex pane with an amber approval state and a confirmation prompt](docs/media/sigpane-approval.webp)](docs/media/sigpane-approval.webp)
+
 When an agent in another pane or tab needs an answer, its header and session card turn amber, the sidebar foot counts it, and **Next Approval** takes you to it. A pill in the titlebar appears while a session in another tab is waiting. You answer in the agent's own prompt; Sigpane only shows you where.
 
 Amber means **Needs approval**, cyan **Running**, violet **Compacting**, red **Stopped on error**, and green **Done** until you have looked at the pane.
@@ -80,6 +86,10 @@ Context, tokens and cost come from Claude Code's status line. **Context and cost
 
 Every command and its output is one block, with a copy button and a fold chevron on the command line.
 
+| Expanded | Folded |
+| --- | --- |
+| [![Expanded make test block with test results](docs/media/sigpane-open.webp)](docs/media/sigpane-open.webp) | [![Folded make test block with the output line count](docs/media/sigpane-folded.webp)](docs/media/sigpane-folded.webp) |
+
 - **Fold and reopen.** Click a block's chevron, or press <kbd>⌃F</kbd> at the shell prompt. Folding takes the output off the screen and keeps its text, with colors; the command line shows the line count and the first line. Reopening unrolls it in place.
 - **Fold long output for you.** Off by default. When on, you set the line threshold and whether the newest output folds too. The output of a command that failed is never folded for you.
 - **Pick and copy.** <kbd>⇧↑</kbd> and <kbd>⇧↓</kbd> select a finished block; <kbd>⌃C</kbd> or <kbd>⌘C</kbd> copies its output, folded or not.
@@ -91,17 +101,26 @@ Blocks come from shell integration's prompt marks, so they appear in shells wher
 
 **Sigpane Settings… → Terminal → Prompt style** changes the zsh prompt. The prompt is drawn with zsh builtins only and takes over from a prompt theme such as Starship inside Sigpane.
 
-| Style               | Looks like                                                                                                                                                  |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Breadcrumb Rail** | The path as breadcrumbs with the git branch, and the command on the line below. |
-| **Command Capsule** | Directory, branch and command on one line inside a capsule.                  |
-| **Tabbed Dock**     | Directory and git tabs above the command line.                                      |
-| **HUD Brackets**    | Corner brackets around labeled directory and git fields, with the command below.    |
-| **Command Card**    | Directory and git chips above the command line, inside a card.                     |
+| Style | Preview |
+| --- | --- |
+| **Breadcrumb Rail** | [![Breadcrumb Rail prompt style](docs/media/sigpane-rail.webp)](docs/media/sigpane-rail.webp) |
+| **Command Capsule** | [![Command Capsule prompt style](docs/media/sigpane-capsule.webp)](docs/media/sigpane-capsule.webp) |
+| **Tabbed Dock** | [![Tabbed Dock prompt style](docs/media/sigpane-dock.webp)](docs/media/sigpane-dock.webp) |
+| **HUD Brackets** | [![HUD Brackets prompt style](docs/media/sigpane-hud.webp)](docs/media/sigpane-hud.webp) |
+| **Command Card** | [![Command Card prompt style](docs/media/sigpane-card.webp)](docs/media/sigpane-card.webp) |
+
 
 ## Layouts
 
 **Sigpane Settings… → Layout → Position** moves the session strip to the left, right, top or bottom. The sidebar button, or <kbd>⌃S</kbd> at the shell prompt, collapses a sidebar to numbered tiles. Sessions can be grouped by agent.
+
+| Collapsed sidebar | Right sidebar |
+| --- | --- |
+| [![Collapsed sidebar with numbered session tiles](docs/media/sigpane-sidebar.webp)](docs/media/sigpane-sidebar.webp) | [![Session cards in the right sidebar](docs/media/sigpane-right.webp)](docs/media/sigpane-right.webp) |
+
+| Top tabs | Bottom tabs |
+| --- | --- |
+| [![Session tabs along the top edge](docs/media/sigpane-top.webp)](docs/media/sigpane-top.webp) | [![Session tabs along the bottom edge](docs/media/sigpane-bottom.webp)](docs/media/sigpane-bottom.webp) |
 
 Choose **Classic** instead of **Signal** in the settings for a simpler capsule tab strip.
 

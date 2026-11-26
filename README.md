@@ -17,21 +17,7 @@
   <a href="#original-ghostty-readme">Original Ghostty README</a>
 </p>
 
-<!--
-  For an inline video player on GitHub: edit this file on github.com, drag
-  docs/media/ghostty-x-film-1080p.mp4 into the editor, and put the URL it inserts on a line of
-  its own here, in place of the preview image below. A video committed to the repository can
-  only be linked, not played inline.
--->
-<p align="center">
-  <a href="docs/media/ghostty-x-film-1080p.mp4">
-    <img src="docs/media/ghostty-x-film-preview.webp" alt="Ghostty X in use: the Signal interface sweeps over a plain terminal, Claude Code reports its tool and task steps in the pane header, Codex opens in a split, a command block folds and reopens, and a pane waiting for approval turns amber" width="100%" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="docs/media/ghostty-x-film-1080p.mp4"><strong>Watch the full film</strong></a> (65 seconds, 1080p, with sound)
-</p>
+https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/ghostty-x-film-1080p.mp4
 
 > [!NOTE]
 > Ghostty X is an independent fork of [Ghostty](https://github.com/ghostty-org/ghostty). It is not affiliated with or endorsed by the Ghostty project. The terminal engine, rendering, native tabs and splits, and configuration are Ghostty's work; see [Relationship to Ghostty](#relationship-to-ghostty).

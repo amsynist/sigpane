@@ -19,6 +19,17 @@
   <a href="#relationship-to-ghostty">Relationship to Ghostty</a>
 </p>
 
+<!-- To play the film inline on GitHub: open this README in GitHub's web editor, drag
+     docs/media/sigpane-showcase-1080p.mp4 into it, and replace the block below with the
+     https://github.com/user-attachments/assets/... line GitHub inserts. -->
+<p align="center">
+  <a href="docs/media/sigpane-showcase-1080p.mp4">
+    <img src="docs/media/sigpane-showcase-poster.jpg" width="820" alt="The Sigpane workspace: session cards in the sidebar, a framed pane with Signal's corner brackets, and the Sigpane lockup" />
+  </a>
+  <br />
+  <sub><a href="docs/media/sigpane-showcase-1080p.mp4">Watch the 75-second showcase</a> · sample project and sessions</sub>
+</p>
+
 ## The Signal interface
 
 - **Session cards.** Each tab is a card with a numbered tile in the tab's color, its title and the focused pane's directory. A new session sweeps into place, and the selection slides from one card to the next.
@@ -135,7 +146,7 @@ On macOS 13 to 15 the tabs keep Ghostty's own appearance.
 
 Everything else is in **Sigpane Settings…**, beside **Open Config** in the app menu: Signal or Classic, tab placement and sizing, pane headers, focus effects, status hints, agent activity hooks, the prompt style, command blocks and the optional Signal Void colors. Window opacity and blur follow your Ghostty configuration.
 
-The [implementation notes](GHOSTTY_X.md) describe how each part works, what it changes in the core, and how it was tested.
+The [implementation notes](SIGPANE.md) describe how each part works, what it changes in the core, and how it was tested.
 
 ## Relationship to Ghostty
 

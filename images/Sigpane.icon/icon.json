@@ -1,0 +1,59 @@
+{
+  "color-space-for-untagged-svg-colors": "display-p3",
+  "fill": {
+    "linear-gradient": [
+      "display-p3:0.10000,0.31000,0.34000,1.00000",
+      "display-p3:0.02700,0.06700,0.13500,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "blend-mode": "normal",
+      "blur-material": null,
+      "hidden": false,
+      "layers": [
+        {
+          "glass": false,
+          "hidden": false,
+          "image-name": "Prompt.svg",
+          "name": "Terminal prompt and activity"
+        }
+      ],
+      "lighting": "individual",
+      "name": "Prompt",
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "blend-mode": "normal",
+      "blur-material": null,
+      "hidden": false,
+      "layers": [
+        {
+          "glass": false,
+          "hidden": false,
+          "image-name": "Pane.svg",
+          "name": "Split terminal window"
+        }
+      ],
+      "lighting": "individual",
+      "name": "Terminal",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.32
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [],
+    "squares": "shared"
+  }
+}

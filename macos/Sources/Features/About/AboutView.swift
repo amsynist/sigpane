@@ -3,7 +3,7 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.openURL) var openURL
 
-    private let githubURL = URL(string: "https://github.com/ghostty-org/ghostty")
+    private let githubURL = URL(string: "https://github.com/amsynist/sigpane")
     private let docsURL = URL(string: "https://ghostty.org/docs")
 
     /// Read the commit from the bundle.
@@ -28,16 +28,6 @@ struct AboutView: View {
                 return
             }
             self = .other(version)
-        }
-
-        var url: URL? {
-            switch self {
-            case .stable(let version):
-                let slug = version.replacingOccurrences(of: ".", with: "-")
-                return URL(string: "https://ghostty.org/docs/install/release-notes/\(slug)")
-            default:
-                return nil
-            }
         }
     }
 
@@ -93,7 +83,7 @@ struct AboutView: View {
                 VStack(spacing: 2) {
                     switch versionConfig {
                     case .stable(let version):
-                        PropertyRow(label: "Version", text: version, url: versionConfig.url)
+                        PropertyRow(label: "Version", text: version)
                     case .tip:
                         PropertyRow(label: "Version", text: "Tip Release")
                     case .other(let v):
@@ -105,7 +95,7 @@ struct AboutView: View {
                         PropertyRow(label: "Build", text: build)
                     }
                     if let commit, commit != "",
-                       let url = githubURL?.appendingPathComponent("/commits/\(commit)") {
+                       let url = githubURL?.appendingPathComponent("commit").appendingPathComponent(commit) {
                         PropertyRow(label: "Commit", text: commit, url: url)
                     }
                 }
@@ -113,12 +103,12 @@ struct AboutView: View {
 
                 HStack(spacing: 8) {
                     if let url = docsURL {
-                        Button("Docs") {
+                        Button("Ghostty Docs") {
                             openURL(url)
                         }
                     }
                     if let url = githubURL {
-                        Button("GitHub") {
+                        Button("Sigpane on GitHub") {
                             openURL(url)
                         }
                     }

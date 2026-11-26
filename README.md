@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="macos/Assets.xcassets/Sigpane.appiconset/icon-128@2x.png" width="96" alt="Sigpane icon" />
+  <img src="macos/Assets.xcassets/AppIconImage.imageset/macOS-AppIcon-256px-128pt@2x.png" width="96" alt="Sigpane icon" />
 </p>
 
 <h1 align="center">Sigpane</h1>

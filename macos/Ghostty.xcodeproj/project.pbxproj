@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D81542BF2FA1000100000003 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = D81542BF2FA1000100000004 /* LICENSE */; };
+		D81542BF2FA1000100000001 /* Sigpane.icon in Resources */ = {isa = PBXBuildFile; fileRef = D81542BF2FA1000100000002 /* Sigpane.icon */; };
 		FA112500AC71000000000001 /* agent-activity.py in Resources */ = {isa = PBXBuildFile; fileRef = FA112500AC71000000000002 /* agent-activity.py */; };
 		29C15B1D2CDC3B2900520DD4 /* bat in Resources */ = {isa = PBXBuildFile; fileRef = 29C15B1C2CDC3B2000520DD4 /* bat */; };
 		55154BE02B33911F001622DC /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = 55154BDF2B33911F001622DC /* ghostty */; };
@@ -66,6 +68,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D81542BF2FA1000100000004 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = ../LICENSE; sourceTree = SOURCE_ROOT; };
+		D81542BF2FA1000100000002 /* Sigpane.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = Sigpane.icon; path = ../images/Sigpane.icon; sourceTree = SOURCE_ROOT; };
 		FA112500AC71000000000002 /* agent-activity.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = ../scripts/agent-activity.py; sourceTree = SOURCE_ROOT; };
 		29C15B1C2CDC3B2000520DD4 /* bat */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bat; path = "../zig-out/share/bat"; sourceTree = "<group>"; };
 		3B39CAA42B33949B00DABEB8 /* GhosttyReleaseLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GhosttyReleaseLocal.entitlements; sourceTree = "<group>"; };
@@ -181,6 +185,8 @@
 				A571AB1C2A206FC600248498 /* Ghostty-Info.plist */,
 				8F3A9B4B2FA6B88000A18D13 /* Ghostty.sdef */,
 				FA112500AC71000000000002 /* agent-activity.py */,
+				D81542BF2FA1000100000004 /* LICENSE */,
+				D81542BF2FA1000100000002 /* Sigpane.icon */,
 				A5B30538299BEAAB0047F10C /* Assets.xcassets */,
 				A5B3053D299BEAAB0047F10C /* Ghostty.entitlements */,
 				A51BFC282B30F26D00E92F16 /* GhosttyDebug.entitlements */,
@@ -398,6 +404,8 @@
 				A5A1F8852A489D6800D1E8BC /* terminfo in Resources */,
 				552964E62B34A9B400030505 /* vim in Resources */,
 				FC5218FA2D10FFCE004C93E0 /* zsh in Resources */,
+				D81542BF2FA1000100000003 /* LICENSE in Resources */,
+				D81542BF2FA1000100000001 /* Sigpane.icon in Resources */,
 				A5B30539299BEAAB0047F10C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -674,7 +682,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mitchellh.ghostty-dock-tile";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.amsynist.ghosttyx.dock-tile";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -703,7 +711,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mitchellh.ghostty-dock-tile";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.amsynist.ghosttyx.dock-tile";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -732,7 +740,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mitchellh.ghostty-dock-tile";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.amsynist.ghosttyx.dock-tile";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;

@@ -15,7 +15,7 @@ struct ColorizedGhosttyIcon {
         // All of our layers (not in order)
         guard let screen = bundle.image(forResource: "CustomIconScreen") else { return nil }
         guard let screenMask = bundle.image(forResource: "CustomIconScreenMask") else { return nil }
-        guard let ghost = bundle.image(forResource: "CustomIconGhost") else { return nil }
+        guard let ghost = bundle.image(forResource: "CustomIconGlyph") else { return nil }
         guard let crt = bundle.image(forResource: "CustomIconCRT") else { return nil }
         guard let gloss = bundle.image(forResource: "CustomIconGloss") else { return nil }
 

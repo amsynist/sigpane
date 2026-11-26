@@ -17,6 +17,16 @@
   <a href="#original-ghostty-readme">Original Ghostty README</a>
 </p>
 
+## The Signal interface
+
+[![A Ghostty X window with a sidebar of four sessions, Claude Code in the left pane and Codex in the right pane, each pane framed with its own header](docs/media/signal-workspace.webp)](docs/media/signal-workspace.webp)
+
+- **Session cards.** Each tab is a card with a numbered tile in the tab's color, its title and the focused pane's directory. A new session sweeps into place, and the selection slides from one card to the next.
+- **Titlebar.** The title is a capsule with the session's number, name and directory. Buttons at the trailing end split right, split down and open the command palette.
+- **Framed panes.** Every pane has a header with its letter, title, directory and size in cells. The focused pane has a tinted outline and corner brackets, and a trace line runs from the selected session to it.
+- **Status line.** A strip under the terminal shows the focused pane and the current shortcuts for tab, pane and block actions.
+- **One color.** The selection, focus outline, trace, titlebar and status line take the selected tab's color.
+
 https://github.com/user-attachments/assets/5a71291f-1976-408e-92f4-b3acb7c89585
 
 > [!NOTE]
@@ -34,16 +44,6 @@ Ghostty X changes how the macOS app looks and what it tells you. The terminal un
 | **Commands** | A block around each command and its output, folding in place, copy, and a marker on commands that failed                   | Shell integration, which marks where each prompt begins         |
 | **Prompt**   | Five zsh prompt styles                                                                                                     | Shell integration                                               |
 | **Engine**   | A small addition for folding rows and reading a command's output                                                           | Terminal emulation, GPU rendering, fonts, themes, configuration |
-
-## The Signal interface
-
-[![A Ghostty X window with a sidebar of four sessions, Claude Code in the left pane and Codex in the right pane, each pane framed with its own header](docs/media/signal-workspace.webp)](docs/media/signal-workspace.webp)
-
-- **Session cards.** Each tab is a card with a numbered tile in the tab's color, its title and the focused pane's directory. A new session sweeps into place, and the selection slides from one card to the next.
-- **Titlebar.** The title is a capsule with the session's number, name and directory. Buttons at the trailing end split right, split down and open the command palette.
-- **Framed panes.** Every pane has a header with its letter, title, directory and size in cells. The focused pane has a tinted outline and corner brackets, and a trace line runs from the selected session to it.
-- **Status line.** A strip under the terminal shows the focused pane and the current shortcuts for tab, pane and block actions.
-- **One color.** The selection, focus outline, trace, titlebar and status line take the selected tab's color.
 
 ## Agent activity
 

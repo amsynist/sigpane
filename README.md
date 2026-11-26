@@ -17,7 +17,7 @@
   <a href="#original-ghostty-readme">Original Ghostty README</a>
 </p>
 
-https://raw.githubusercontent.com/amsynist/ghostty-X/assets/signal/ghostty-x-film-1080p.mp4
+https://github.com/user-attachments/assets/5a71291f-1976-408e-92f4-b3acb7c89585
 
 > [!NOTE]
 > Ghostty X is an independent fork of [Ghostty](https://github.com/ghostty-org/ghostty). It is not affiliated with or endorsed by the Ghostty project. The terminal engine, rendering, native tabs and splits, and configuration are Ghostty's work; see [Relationship to Ghostty](#relationship-to-ghostty).

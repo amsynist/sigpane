@@ -4,16 +4,16 @@ Ghostty X is a macOS appearance fork of Ghostty. Its default Signal interface
 adds session cards, a focus trace around split panes, and command blocks you
 can fold and copy inside the terminal.
 
-[![Ghostty X Signal walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough.mp4)
+[![Ghostty X Signal live walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/0dc5a6353f5020f0399a4e86f3d7aaf2af3397b9/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/0dc5a6353f5020f0399a4e86f3d7aaf2af3397b9/signal/4k/signal-walkthrough.mp4)
 
-[Watch the 4K walkthrough (52 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough.mp4) ·
+[Watch the live walkthrough (20 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/0dc5a6353f5020f0399a4e86f3d7aaf2af3397b9/signal/4k/signal-walkthrough.mp4) ·
 [Download the offline HTML walkthrough (ZIP)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough-html.zip)
 
-The walkthrough and layout close-ups render fictional terminal sessions over the
-teal cutting-mat wallpaper at 3840 × 2496, and the live agent-activity captures
-below are framed over the same cutting-mat wallpaper. Select any image to open
-the full screenshot, or open the downloaded HTML file to jump directly to any
-tab position, prompt style, or command-block action.
+The live walkthrough and agent-activity captures run `GhosttyX.app` with
+translucent blurred glass over the teal cutting-mat wallpaper, alongside the
+3840 × 2496 layout and prompt close-ups below. Select any image to open the
+full capture, or open the downloaded HTML file to jump directly to any tab
+position, prompt style, or command-block action.
 
 ## Sidebars and tabs
 
@@ -50,8 +50,8 @@ Approvals are handled in the original CLI prompt.
 | Agents overview | Top tabs |
 | --- | --- |
 | [![The agents overview panel listing three sessions with their subagents](docs/previews/agents/agents-4-overview.webp)](docs/previews/agents/agents-4-overview.webp) | [![The same sessions with the tab bar at the top](docs/previews/agents/agents-5-top.webp)](docs/previews/agents/agents-5-top.webp) |
-| **Collapsed sidebar** | **Context near limit (93%)** |
-| [![The sidebar collapsed to numbered tiles with context rings and state dots](docs/previews/agents/agents-2-rail.webp)](docs/previews/agents/agents-2-rail.webp) | [![A session compacting at 93% context with a red ring and header progress](docs/previews/agents/agents-3-compacting.webp)](docs/previews/agents/agents-3-compacting.webp) |
+| **Collapsed sidebar** | **Codex approval & compacting state** |
+| [![The sidebar collapsed to numbered tiles with context rings and state dots](docs/previews/agents/agents-2-rail.webp)](docs/previews/agents/agents-2-rail.webp) | [![Codex approval prompt in the active pane while a Claude session compacts in the sidebar](docs/previews/agents/agents-3-compacting.webp)](docs/previews/agents/agents-3-compacting.webp) |
 
 [Open the interactive preview](docs/previews/signal-agents.html)
 

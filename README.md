@@ -19,17 +19,7 @@
   <a href="#relationship-to-ghostty">Relationship to Ghostty</a>
 </p>
 
-<!-- The film lives on the assets branch (sigpane/sigpane-showcase-1080p.mp4), so master stays
-     small. For an inline player instead of a link: drag that file into this README in
-     GitHub's web editor and replace the block below with the
-     https://github.com/user-attachments/assets/... line GitHub inserts. -->
-<p align="center">
-  <a href="https://raw.githubusercontent.com/amsynist/sigpane/assets/sigpane/sigpane-showcase-1080p.mp4">
-    <img src="docs/media/sigpane-showcase-poster.jpg" width="820" alt="The Sigpane workspace: session cards in the sidebar, a framed pane with Signal's corner brackets, and the Sigpane lockup" />
-  </a>
-  <br />
-  <sub><a href="https://raw.githubusercontent.com/amsynist/sigpane/assets/sigpane/sigpane-showcase-1080p.mp4">Watch the 75-second showcase</a> · sample project and sessions</sub>
-</p>
+https://github.com/user-attachments/assets/f4074bcc-0aee-4e62-b624-99db22c3b9ba
 
 ## The Signal interface
 

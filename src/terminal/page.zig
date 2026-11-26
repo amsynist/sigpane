@@ -947,6 +947,11 @@ pub const Page = struct {
                 // may overestimate, which only costs the renderer a scan.
                 copy.kitty_virtual_placeholder = dst_row.kitty_virtual_placeholder or
                     src_row.kitty_virtual_placeholder;
+
+                // Both parts may have prompt cells.
+                copy.semantic_prompt = dst_row.semantic_prompt.combine(
+                    src_row.semantic_prompt,
+                );
             }
 
             // Our cell offset remains the same
@@ -1159,11 +1164,24 @@ pub const Page = struct {
         // The source cells may have content.
         dst_row.blank = false;
 
-        // If src has no managed memory, this is very fast.
-        if (!src_row.managedMemory()) {
+        // A partial move keeps the destination's other cells, so the row
+        // needs a mark that covers both.
+        dst_row.semantic_prompt = if (len == self.size.cols)
+            src_row.semantic_prompt
+        else
+            dst_row.semantic_prompt.combine(src_row.semantic_prompt);
+
+        // Styles are keyed by ID, so copying a cell keeps its style and
+        // ref count exact. Graphemes and hyperlinks are keyed by cell
+        // offset and have to be moved one cell at a time, and placeholders
+        // have to be found to flag the destination row.
+        if (!src_row.grapheme and
+            !src_row.hyperlink and
+            !src_row.kitty_virtual_placeholder)
+        {
             fastmem.copy(Cell, dst_cells, src_cells);
         } else {
-            // Source has graphemes or hyperlinks...
+            // Source has graphemes, hyperlinks or placeholders...
             for (src_cells, dst_cells) |*src, *dst| {
                 dst.* = src.*;
                 if (src.hasGrapheme()) {
@@ -2358,6 +2376,29 @@ pub const Row = packed struct(u64) {
         /// is found, the last (most historical) prompt continuation line is
         /// considered the prompt.
         prompt_continuation = 2,
+
+        /// Returns the mark for a row that holds cells from rows marked
+        /// `self` and `other`, such as after a partial row move inside
+        /// left and right margins. The order doesn't matter.
+        ///
+        /// ```zig
+        /// dst_row.semantic_prompt = dst_row.semantic_prompt.combine(
+        ///     src_row.semantic_prompt,
+        /// );
+        /// ```
+        ///
+        /// `.prompt` wins over `.prompt_continuation`, which wins over
+        /// `.none`. A wrong start only adds a stop when jumping between
+        /// prompts, but a wrong continuation would skip a prompt.
+        pub fn combine(
+            self: SemanticPrompt,
+            other: SemanticPrompt,
+        ) SemanticPrompt {
+            if (self == .prompt or other == .prompt) return .prompt;
+            if (self == .prompt_continuation or
+                other == .prompt_continuation) return .prompt_continuation;
+            return .none;
+        }
     };
 
     /// The backing integer of this packed struct. Prefer this over
@@ -4414,6 +4455,81 @@ test "Page moveCells text-only" {
     }
 }
 
+test "Page moveCells styled" {
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    const id = try page.styles.add(page.memory, .{ .flags = .{
+        .bold = true,
+    } });
+
+    // Write
+    for (0..page.size.cols) |x| {
+        const rac = page.getRowAndCell(x, 0);
+        rac.row.styled = true;
+        rac.cell.* = .{
+            .content_tag = .codepoint,
+            .content = .{ .codepoint = .{ .data = @intCast(x + 1) } },
+            .style_id = id,
+        };
+        page.styles.use(page.memory, id);
+    }
+
+    // The original style add would have incremented the
+    // ref count too, so release it to balance that out.
+    page.styles.release(page.memory, id);
+    const original_refs = page.styles.refCount(page.memory, id);
+
+    // Move the middle of the row, like a scroll within left and
+    // right margins does.
+    const src = page.getRow(0);
+    const dst = page.getRow(1);
+    page.moveCells(src, 2, dst, 2, 6);
+
+    // The moved cells keep their style and the references move with them.
+    try testing.expect(dst.styled);
+    try testing.expect(src.styled);
+    try testing.expectEqual(original_refs, page.styles.refCount(page.memory, id));
+    for (0..page.size.cols) |x| {
+        const moved = x >= 2 and x < 8;
+        const src_cell = page.getRowAndCell(x, 0).cell;
+        const dst_cell = page.getRowAndCell(x, 1).cell;
+        const keep = if (moved) dst_cell else src_cell;
+        const empty = if (moved) src_cell else dst_cell;
+        try testing.expectEqual(@as(u21, @intCast(x + 1)), keep.content.codepoint.data);
+        try testing.expectEqual(id, keep.style_id);
+        try testing.expectEqual(@as(u21, 0), empty.content.codepoint.data);
+        try testing.expectEqual(stylepkg.default_id, empty.style_id);
+    }
+    try page.verifyIntegrity(testing.allocator);
+}
+
+test "Page moveCells kitty placeholder" {
+    if (comptime !build_options.kitty_graphics) return error.SkipZigTest;
+
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = 10,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    const rac = page.getRowAndCell(3, 0);
+    rac.cell.* = .init(kitty.graphics.unicode.placeholder);
+    rac.row.kitty_virtual_placeholder = true;
+
+    const src = page.getRow(0);
+    const dst = page.getRow(1);
+    page.moveCells(src, 0, dst, 0, page.size.cols);
+
+    try testing.expect(dst.kitty_virtual_placeholder);
+    try testing.expect(!src.kitty_virtual_placeholder);
+}
+
 test "Page moveCells graphemes" {
     var page = try Page.init(.{
         .cols = 10,
@@ -4785,6 +4901,78 @@ test "Page cloneRowFrom partial keeps kitty placeholder flag" {
     try testing.expect(!dst.getRow(2).kitty_virtual_placeholder);
 
     try dst.verifyIntegrity(testing.allocator);
+}
+
+test "Page cloneRowFrom partial combines semantic prompt" {
+    const SP = Row.SemanticPrompt;
+    const cases = [_]struct { dst: SP, src: SP, expected: SP }{
+        .{ .dst = .none, .src = .none, .expected = .none },
+        .{ .dst = .none, .src = .prompt, .expected = .prompt },
+        .{ .dst = .none, .src = .prompt_continuation, .expected = .prompt_continuation },
+        .{ .dst = .prompt, .src = .none, .expected = .prompt },
+        .{ .dst = .prompt, .src = .prompt, .expected = .prompt },
+        .{ .dst = .prompt, .src = .prompt_continuation, .expected = .prompt },
+        .{ .dst = .prompt_continuation, .src = .none, .expected = .prompt_continuation },
+        .{ .dst = .prompt_continuation, .src = .prompt, .expected = .prompt },
+        .{ .dst = .prompt_continuation, .src = .prompt_continuation, .expected = .prompt_continuation },
+    };
+
+    var src = try Page.init(.{
+        .cols = 10,
+        .rows = cases.len,
+        .styles = 8,
+    });
+    defer src.deinit();
+    var dst = try Page.init(.{
+        .cols = 10,
+        .rows = cases.len,
+        .styles = 8,
+    });
+    defer dst.deinit();
+
+    for (cases, 0..) |c, y| {
+        dst.getRow(y).semantic_prompt = c.dst;
+        src.getRow(y).semantic_prompt = c.src;
+        try dst.clonePartialRowFrom(&src, dst.getRow(y), src.getRow(y), 2, 8);
+        try testing.expectEqual(c.expected, dst.getRow(y).semantic_prompt);
+    }
+}
+
+test "Page moveCells combines semantic prompt" {
+    const SP = Row.SemanticPrompt;
+    const cases = [_]struct { dst: SP, src: SP, expected: SP }{
+        .{ .dst = .none, .src = .none, .expected = .none },
+        .{ .dst = .none, .src = .prompt, .expected = .prompt },
+        .{ .dst = .none, .src = .prompt_continuation, .expected = .prompt_continuation },
+        .{ .dst = .prompt, .src = .none, .expected = .prompt },
+        .{ .dst = .prompt, .src = .prompt, .expected = .prompt },
+        .{ .dst = .prompt, .src = .prompt_continuation, .expected = .prompt },
+        .{ .dst = .prompt_continuation, .src = .none, .expected = .prompt_continuation },
+        .{ .dst = .prompt_continuation, .src = .prompt, .expected = .prompt },
+        .{ .dst = .prompt_continuation, .src = .prompt_continuation, .expected = .prompt_continuation },
+    };
+
+    var page = try Page.init(.{
+        .cols = 10,
+        .rows = cases.len * 2,
+        .styles = 8,
+    });
+    defer page.deinit();
+
+    for (cases, 0..) |c, i| {
+        const src = page.getRow(i * 2);
+        const dst = page.getRow(i * 2 + 1);
+        src.semantic_prompt = c.src;
+        dst.semantic_prompt = c.dst;
+        page.moveCells(src, 2, dst, 2, 6);
+        try testing.expectEqual(c.expected, dst.semantic_prompt);
+
+        // A full row move takes the source's mark.
+        src.semantic_prompt = c.src;
+        dst.semantic_prompt = c.dst;
+        page.moveCells(src, 0, dst, 0, page.size.cols);
+        try testing.expectEqual(c.src, dst.semantic_prompt);
+    }
 }
 
 test "Page exactRowCapacity empty rows" {

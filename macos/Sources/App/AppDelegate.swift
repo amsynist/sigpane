@@ -252,8 +252,10 @@ class AppDelegate: NSObject,
         // Sigpane: a scripted walk through the chrome, only when asked for by environment.
         SignalDemo.runIfRequested()
 
-        // Start our update checker.
+        // Start our update checker. Sigpane has no update feed yet, so it stays off and
+        // the menu item is hidden (see `UpdateController.feedURL`).
         updateController.startUpdater()
+        menuCheckForUpdates?.isHidden = !updateController.isEnabled
 
         // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
@@ -546,7 +548,7 @@ class AppDelegate: NSObject,
                 Self.logger.warning("refusing to execute file with control characters path=\(filename.debugDescription, privacy: .public)")
                 let alert = NSAlert()
                 alert.messageText = "Cannot Execute File"
-                alert.informativeText = "This file's path contains hidden control characters, which could make Ghostty run a different command than the one shown."
+                alert.informativeText = "This file's path contains hidden control characters, which could make Sigpane run a different command than the one shown."
                 alert.addButton(withTitle: "OK")
                 alert.alertStyle = .warning
                 alert.runModal()
@@ -575,7 +577,7 @@ class AppDelegate: NSObject,
             // may want to show this as a sheet on the focused window (especially if we're
             // opening a tab). I'm not sure.
             let alert = NSAlert()
-            alert.messageText = "Allow Ghostty to execute \"\(filename)\"?"
+            alert.messageText = "Allow Sigpane to execute \"\(filename)\"?"
             alert.addButton(withTitle: "Allow")
             alert.addButton(withTitle: "Cancel")
             alert.alertStyle = .warning
@@ -849,7 +851,7 @@ class AppDelegate: NSObject,
         // explicitly false (NO), auto-updates are disabled. Otherwise, we use the behavior
         // defined by our "auto-update" configuration (if set) or fall back to Sparkle
         // user-based defaults.
-        if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
+        if !updateController.isEnabled || Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
             updateController.updater.automaticallyChecksForUpdates = false
             updateController.updater.automaticallyDownloadsUpdates = false
         } else if let autoUpdate = config.autoUpdate {

@@ -12,17 +12,15 @@ A macOS appearance fork based on `amsynist/ghostty-X` at e95bed633. The terminal
 
 ## Build
 
-Read `AGENTS.md`, `macos/AGENTS.md` and `HACKING.md` first. This revision pins Zig 0.17.0. Use that exact compiler, Xcode with the Metal Toolchain, and Nushell:
+Follow the [source build guide in the README](README.md#build-from-source).
+It uses the Zig version in `build.zig.zon` and the macOS build script from this
+checkout. To run the native tests after building the core framework:
 
 ```sh
-zig build -Doptimize=ReleaseFast -Demit-macos-app=false -Dxcframework-target=native
-macos/build.nu --configuration ReleaseLocal --arch arm64
-macos/build.nu --configuration ReleaseLocal --arch arm64 --action test
+macos/build.nu --configuration ReleaseLocal --arch "$(uname -m)" --action test
 ```
 
-The `--arch arm64` option matches the native-only framework; omit it when building a universal framework.
-
-The release-optimized local app is `macos/build/ReleaseLocal/GhosttyX.app`. `ReleaseLocal` uses upstream local build signing; distributing or installing a trusted custom build requires explicit signing and validation. Building does not replace or quit an installed terminal. The development toolchain and local build logs are excluded using `.git/info/exclude`.
+The local app is `macos/build/ReleaseLocal/GhosttyX.app`.
 
 ## Review and validation
 

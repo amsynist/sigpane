@@ -1,157 +1,199 @@
-# Ghostty X
+<h1 align="center">Ghostty X</h1>
 
-Ghostty X is a macOS appearance fork of Ghostty. Its default Signal interface
-adds session cards, a focus trace around split panes, and command blocks you
-can fold and copy inside the terminal.
+<p align="center">
+  <strong>The Signal interface for Ghostty on macOS.</strong>
+  <br />
+  Session cards, framed split panes, live Claude Code and Codex activity, and command blocks you can fold.
+  <br />
+  <br />
+  <a href="#what-ghostty-x-adds">Features</a>
+  ·
+  <a href="#build-from-source">Build</a>
+  ·
+  <a href="#configuration">Configuration</a>
+  ·
+  <a href="#relationship-to-ghostty">Relationship to Ghostty</a>
+  ·
+  <a href="#original-ghostty-readme">Original Ghostty README</a>
+</p>
 
-[![Ghostty X Signal live walkthrough over the teal cutting-mat wallpaper](https://raw.githubusercontent.com/amsynist/ghostty-X/278ab3c5f3f8b8f162d2070ded61dd77ecf252d8/signal/4k/signal-preview.webp)](https://raw.githubusercontent.com/amsynist/ghostty-X/278ab3c5f3f8b8f162d2070ded61dd77ecf252d8/signal/4k/signal-walkthrough.mp4)
+<!--
+  For an inline video player on GitHub: edit this file on github.com, drag
+  docs/media/ghostty-x-film-1080p.mp4 into the editor, and put the URL it inserts on a line of
+  its own here, in place of the preview image below. A video committed to the repository can
+  only be linked, not played inline.
+-->
+<p align="center">
+  <a href="docs/media/ghostty-x-film-1080p.mp4">
+    <img src="docs/media/ghostty-x-film-preview.webp" alt="Ghostty X in use: the Signal interface sweeps over a plain terminal, Claude Code reports its tool and task steps in the pane header, Codex opens in a split, a command block folds and reopens, and a pane waiting for approval turns amber" width="100%" />
+  </a>
+</p>
 
-[Watch the live walkthrough (22 seconds)](https://raw.githubusercontent.com/amsynist/ghostty-X/278ab3c5f3f8b8f162d2070ded61dd77ecf252d8/signal/4k/signal-walkthrough.mp4) ·
-[Download the offline HTML walkthrough (ZIP)](https://raw.githubusercontent.com/amsynist/ghostty-X/bfe8a233548a71f718581aafe9f797a3b4f18f96/signal/4k/signal-walkthrough-html.zip)
+<p align="center">
+  <a href="docs/media/ghostty-x-film-1080p.mp4"><strong>Watch the full film</strong></a> (65 seconds, 1080p, with sound)
+</p>
 
-The live walkthrough and native lossless 3324 × 2120 agent-activity captures
-run `GhosttyX.app` with translucent blurred glass over the teal cutting-mat
-wallpaper, alongside the 3840 × 2496 layout and prompt close-ups below. Select
-any image to open the full capture, or open the downloaded HTML file to jump
-directly to any tab position, prompt style, or command-block action.
+> [!NOTE]
+> Ghostty X is an independent fork of [Ghostty](https://github.com/ghostty-org/ghostty). It is not affiliated with or endorsed by the Ghostty project. The terminal engine, rendering, native tabs and splits, and configuration are Ghostty's work; see [Relationship to Ghostty](#relationship-to-ghostty).
 
-## Sidebars and tabs
+## What Ghostty X adds
 
-Select **Ghostty X Settings… → Layout → Position** to move the session strip. Signal shows numbered
-session cards in the left or right sidebar and compact tabs at the top or bottom.
-Use the sidebar button or **Control-S** at the shell prompt to collapse the
-sidebar to numbered tiles.
+Ghostty X changes how the macOS app looks and what it tells you. The terminal underneath is Ghostty.
 
-### Claude Code and Codex activity
+|              | Ghostty X adds                                                                                                             | Ghostty provides                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Sessions** | Numbered session cards in a sidebar, or compact tabs at the top or bottom, with a selection that slides between them       | Native tabs and windows, restoration, key bindings              |
+| **Splits**   | A frame and header for every pane, corner brackets and a trace line that follow focus, split buttons in the titlebar       | The split tree, resizing, zoom and equalize                     |
+| **Agents**   | Claude Code and Codex activity in the pane header, session card, status line and sidebar, with a jump to the next approval | The terminal they run in                                        |
+| **Commands** | A block around each command and its output, folding in place, copy, and a marker on commands that failed                   | Shell integration, which marks where each prompt begins         |
+| **Prompt**   | Five zsh prompt styles                                                                                                     | Shell integration                                               |
+| **Engine**   | A small addition for folding rows and reading a command's output                                                           | Terminal emulation, GPU rendering, fonts, themes, configuration |
 
-The Signal interface treats a Claude Code or Codex session as a session of its
-own, in the space the chrome already has:
+## The Signal interface
 
-- **Session card.** The second line shows the state and the tool in use
-  (`▸ Edit routes.swift`). The turn's time follows the title, the outline
-  around the tile fills with the context window, and each subagent is a dot.
-- **Pane header.** Who is working and on what, with task steps, subagent dots
-  and a context pie. Its lower edge moves while the agent works and turns
-  amber while it waits. Nothing is added above the terminal, so a session
-  starting or ending never changes the terminal's size.
-- **Status line.** Follows the focused pane: state and turn time, model,
-  permission mode, context, tokens, cost, files and lines changed.
-- **Sidebar foot.** One segment per session and **Next Approval**. A pill in
-  the titlebar appears while a session in another tab is waiting.
-- **Agents overview.** <kbd>⌘⇧A</kbd> lists every session in every tab with
-  its subagents. <kbd>⌃⇧A</kbd> goes to the next one waiting for an answer.
+[![A Ghostty X window with a sidebar of four sessions, Claude Code in the left pane and Codex in the right pane, each pane framed with its own header](docs/media/signal-workspace.webp)](docs/media/signal-workspace.webp)
 
-Amber means **Needs approval**, cyan **Running**, violet **Compacting**, red
-**Stopped on error**, and green **Done** until you have looked at the pane.
-Approvals are handled in the original CLI prompt.
+- **Session cards.** Each tab is a card with a numbered tile in the tab's color, its title and the focused pane's directory. A new session sweeps into place, and the selection slides from one card to the next.
+- **Titlebar.** The title is a capsule with the session's number, name and directory. Buttons at the trailing end split right, split down and open the command palette.
+- **Framed panes.** Every pane has a header with its letter, title, directory and size in cells. The focused pane has a tinted outline and corner brackets, and a trace line runs from the selected session to it.
+- **Status line.** A strip under the terminal shows the focused pane and the current shortcuts for tab, pane and block actions.
+- **One color.** The selection, focus outline, trace, titlebar and status line take the selected tab's color.
 
-[![Three sessions in the sidebar: one running with subagents, one waiting for approval, one ready](docs/previews/agents/agents-1-working.webp)](docs/previews/agents/agents-1-working.webp)
+## Agent activity
 
-| Agents overview | Top tabs |
-| --- | --- |
-| [![The agents overview panel listing three sessions with their subagents](docs/previews/agents/agents-4-overview.webp)](docs/previews/agents/agents-4-overview.webp) | [![The same sessions with the tab bar at the top](docs/previews/agents/agents-5-top.webp)](docs/previews/agents/agents-5-top.webp) |
-| **Collapsed sidebar** | **Codex approval & compacting state** |
-| [![The sidebar collapsed to numbered tiles with context rings and state dots](docs/previews/agents/agents-2-rail.webp)](docs/previews/agents/agents-2-rail.webp) | [![Codex approval prompt in the active pane while a Claude session compacts in the sidebar](docs/previews/agents/agents-3-compacting.webp)](docs/previews/agents/agents-3-compacting.webp) |
+A Claude Code or Codex session is treated as a session of its own, in the space the interface already has. Nothing is added above the terminal, so a session starting or ending never changes the terminal's size.
 
-[Open the interactive preview](docs/previews/signal-agents.html)
+[![Claude Code working in a pane: the header shows the tool and file, task steps, subagents and context, and the status line shows the model, mode, context, tokens and cost](docs/media/agent-activity.webp)](docs/media/agent-activity.webp)
 
-In **Ghostty X Settings… → Agent Activity**, enable Claude Code, Codex, or both. The
-setup uses Python 3.9 or newer. You can also enable the hooks from this
-checkout:
+- **Pane header.** Who is working and on what (`Write RateLimiterTests.swift`), with task steps, a dot for each subagent and a context pie. Its lower edge moves while the agent works.
+- **Session card.** The second line shows the state and the tool in use. The outline around the tile fills with the context window.
+- **Status line.** Follows the focused pane: state and turn time, model, permission mode, context, tokens, cost, files and lines changed.
+
+<p align="center">
+  <img src="docs/media/agent-status-line.webp" alt="The status line reading: Running 0:11, Opus 5.5, accept edits, context 47 percent, 94k tokens, $0.55, 2 files, 57 lines added, 2 removed" width="620" />
+</p>
+
+### Approvals
+
+When an agent in another pane or tab needs an answer, its header and session card turn amber, the sidebar foot counts it, and **Next Approval** takes you to it. A pill in the titlebar appears while a session in another tab is waiting. You answer in the agent's own prompt; Ghostty X only shows you where.
+
+| The whole window                                                                                                                                                                                                                                                      | The pane that is waiting                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [![Three panes: Claude Code running on the left, Codex waiting for approval at the top right with an amber header, and a shell below it; the sidebar foot reads 1 waiting, 1 running, Next Approval](docs/media/agent-approval.webp)](docs/media/agent-approval.webp) | [![The Codex pane with an amber header reading Bash git push, asking whether to allow the command](docs/media/agent-approval-detail.webp)](docs/media/agent-approval-detail.webp) |
+
+Amber means **Needs approval**, cyan **Running**, violet **Compacting**, red **Stopped on error**, and green **Done** until you have looked at the pane.
+
+<kbd>⌘⇧A</kbd> opens the Agents overview, which lists every session in every tab with its subagents. <kbd>⌃⇧A</kbd> goes to the next one waiting for an answer.
+
+[![The Agents overview panel listing three sessions with their subagents](docs/previews/agents/agents-4-overview.webp)](docs/previews/agents/agents-4-overview.webp)
+
+### Turning it on
+
+In **Ghostty X Settings… → Agent Activity**, enable Claude Code, Codex, or both. The setup uses Python 3.9 or newer. You can also enable the hooks from a checkout:
 
 ```sh
 python3 scripts/agent-activity.py enable claude
 python3 scripts/agent-activity.py enable codex
 ```
 
-Launch `claude` or `codex` in a pane opened by a Ghostty X build with agent
-activity support. In Codex, review and trust the Ghostty X hooks in
-`/hooks`. The hook passes the provider's state to the pane through a local
-temporary directory: the phase, the tool's name and one word about its target
-(a file's name, a command's first word), never a prompt, a path or a full
-command. To remove the hooks, run the same commands with `disable`. Enable
-again after updating Ghostty X, since newer versions follow more events.
+Then start `claude` or `codex` in a Ghostty X pane. In Codex, review and trust the Ghostty X hooks in `/hooks`. To remove the hooks, run the same commands with `disable`. Enable again after updating Ghostty X, since newer versions follow more events.
 
-Context, tokens and cost come from Claude Code's status line. **Context and
-cost → Enable** (or `usage-enable claude`) records them and then runs the
-status line command you already had; `usage-disable` puts it back.
+Context, tokens and cost come from Claude Code's status line. **Context and cost → Enable** (or `usage-enable claude`) records them and then runs the status line command you already had; `usage-disable` puts it back.
 
-| Left sidebar | Right sidebar |
-| --- | --- |
-| [![Left sidebar with four session cards](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-left.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-left.png) | [![Right sidebar with four session cards](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-right.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-right.png) |
-
-### Top tabs
-
-[![Top tab bar and New session button](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-top.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-top.png)
-
-### Bottom tabs
-
-[![Bottom tab bar and New session button](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-bottom.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-bottom.png)
-
-## Prompt styles
-
-Choose **Ghostty X Settings… → Terminal → Prompt style** to change the zsh prompt.
-
-### Breadcrumb Rail
-
-[![Breadcrumb Rail prompt with a full path and Git branch](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-rail.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-rail.png)
-
-### Command Capsule
-
-[![Command Capsule with the environment, branch and command on one line](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-capsule.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-capsule.png)
-
-### Tabbed Dock
-
-[![Tabbed Dock with directory, Git and Python tabs above the command](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-dock.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-dock.png)
-
-### HUD Brackets
-
-[![HUD Brackets with corner brackets and labeled context](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-hud.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-hud.png)
-
-### Command Card
-
-[![Command Card with directory and Git chips above the command line](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-detail-prompt-card.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-card.png)
+**What the hook passes on.** The provider's state reaches the pane through a local temporary directory: the phase, the tool's name and one word about its target (a file's name, a command's first word). Never a prompt, a path or a full command.
 
 ## Command blocks
 
-[![A selected command block with the keyboard copy hint](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-blocks.png)](https://raw.githubusercontent.com/amsynist/ghostty-X/cd32c38f0cb310a2daa15d3c29c84edb7ae9b763/signal/4k/signal-blocks.png)
+Every command and its output is one block, with a copy button and a fold chevron on the command line.
 
-- **Fold and reopen output.** Use a block’s chevron or press **Control-F** to
-  fold or reopen eligible blocks at the shell prompt. Optional automatic
-  folding lets you set the line threshold and include or skip the newest output.
-- **Pick and copy.** Use **Shift-Up** or **Shift-Down** to select a finished
-  block, then **Control-C** or **Command-C** to copy its output. Recent commands
-  also offers a preview and copy controls.
-- **See what failed.** A command with a nonzero exit status gets a red
-  **FAILED** marker on its own block. A fold in scrollback can open as a
-  read-only preview.
-- **Follow focus.** The active tab’s color carries through to the pane outline,
-  trace, titlebar and status line. The status line can show the current
-  shortcuts for tab, pane and block actions.
+| Open                                                                                                                                         | Folded                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [![A command block showing make test and its seven lines of output](docs/media/command-block-open.webp)](docs/media/command-block-open.webp) | [![The same block folded to one line that reads make test, 7 lines, and the first line of output](docs/media/command-block-folded.webp)](docs/media/command-block-folded.webp) |
+
+- **Fold and reopen.** Click a block's chevron, or press <kbd>⌃F</kbd> at the shell prompt. Folding takes the output off the screen and keeps its text, with colors; the command line shows the line count and the first line. Reopening unrolls it in place.
+- **Fold long output for you.** Off by default. When on, you set the line threshold and whether the newest output folds too. The output of a command that failed is never folded for you.
+- **Pick and copy.** <kbd>⇧↑</kbd> and <kbd>⇧↓</kbd> select a finished block; <kbd>⌃C</kbd> or <kbd>⌘C</kbd> copies its output, folded or not.
+- **See what failed.** A command that exits non-zero gets a red **FAILED** marker on its own block.
+
+Blocks come from shell integration's prompt marks, so they appear in shells where Ghostty's shell integration is active.
+
+## Prompt styles
+
+**Ghostty X Settings… → Terminal → Prompt style** changes the zsh prompt. The prompt is drawn with zsh builtins only and takes over from a prompt theme such as Starship inside Ghostty X.
+
+| Style               | Looks like                                                                                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Breadcrumb Rail** | <img src="docs/media/prompt-rail.webp" alt="Breadcrumb Rail: the path as breadcrumbs with the Git branch, and the command on the line below" width="500" /> |
+| **Command Capsule** | <img src="docs/media/prompt-capsule.webp" alt="Command Capsule: directory, branch and command on one line inside a capsule" width="500" />                  |
+| **Tabbed Dock**     | <img src="docs/media/prompt-dock.webp" alt="Tabbed Dock: directory and Git tabs above the command line" width="500" />                                      |
+| **HUD Brackets**    | <img src="docs/media/prompt-hud.webp" alt="HUD Brackets: corner brackets around labeled directory and Git fields, with the command below" width="500" />    |
+| **Command Card**    | <img src="docs/media/prompt-card.webp" alt="Command Card: directory and Git chips above the command line, inside a card" width="500" />                     |
+
+## Layouts
+
+**Ghostty X Settings… → Layout → Position** moves the session strip to the left, right, top or bottom. The sidebar button, or <kbd>⌃S</kbd> at the shell prompt, collapses a sidebar to numbered tiles. Sessions can be grouped by agent.
+
+| Collapsed sidebar                                                                                                                                                | Tabs at the top                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [![The sidebar collapsed to numbered tiles with context rings and state dots](docs/previews/agents/agents-2-rail.webp)](docs/previews/agents/agents-2-rail.webp) | [![The same sessions with the tab bar at the top](docs/previews/agents/agents-5-top.webp)](docs/previews/agents/agents-5-top.webp) |
+
+Choose **Classic** instead of **Signal** in the settings for a simpler capsule tab strip.
+
+## Build from source
+
+Ghostty X runs on macOS only. You need Xcode with its macOS SDK and Metal toolchain, Zig at the version in [`build.zig.zon`](build.zig.zon), and Nushell. See [Ghostty's macOS build prerequisites](HACKING.md#macos) for details.
+
+```sh
+git clone https://github.com/amsynist/ghostty-X.git
+cd ghostty-X
+zig build -Doptimize=ReleaseFast -Demit-macos-app=false -Dxcframework-target=native
+macos/build.nu --configuration ReleaseLocal --arch "$(uname -m)"
+open macos/build/ReleaseLocal/GhosttyX.app
+```
+
+The app builds as `GhosttyX.app` with the bundle identifier `com.amsynist.ghosttyx`, so it installs beside the official Ghostty and reads the same Ghostty configuration.
+
+To run the native tests:
+
+```sh
+macos/build.nu --configuration ReleaseLocal --arch "$(uname -m)" --action test
+```
 
 ## Configuration
 
-The custom tab strip uses the `tabs` titlebar style on macOS 26 and later.
-Set it in your Ghostty configuration:
+The custom tab strip uses the `tabs` titlebar style, on macOS 26 and later. Set it in your Ghostty configuration:
 
 ```ini
 macos-titlebar-style = tabs
 ```
 
-Open **Ghostty X Settings…** beside **Open Config** in the app menu. Choose **Signal** or
-**Classic**, configure tab placement and sizing, and adjust pane headers,
-focus effects, status hints, and **Agent Activity** hooks. The **Terminal** section controls the zsh
-Signal prompt, command blocks and optional Signal Void colors. Window opacity
-and blur follow your Ghostty configuration, and the Quick Terminal derives a
-matching Signal accent from your active screen wallpaper when available.
+On macOS 13 to 15 the tabs keep Ghostty's own appearance.
 
-[![Ghostty X Settings window showing Design, Agent Activity, Terminal controls, and Live preview](docs/previews/agents/ghostty-x-settings.webp)](docs/previews/agents/ghostty-x-settings.webp)
+Everything else is in **Ghostty X Settings…**, beside **Open Config** in the app menu: Signal or Classic, tab placement and sizing, pane headers, focus effects, status hints, agent activity hooks, the prompt style, command blocks and the optional Signal Void colors. Window opacity and blur follow your Ghostty configuration.
 
-The app builds as `GhosttyX.app` with bundle identifier
-`com.amsynist.ghosttyx`. See the [build and implementation notes](GHOSTTY_X.md)
-for build commands, supported behavior and test coverage.
+[![The Ghostty X Settings window with Design, Agent Activity and Terminal controls and a live preview](docs/previews/agents/ghostty-x-settings.webp)](docs/previews/agents/ghostty-x-settings.webp)
+
+The [implementation notes](GHOSTTY_X.md) describe how each part works, what it changes in the core, and how it was tested.
+
+## Relationship to Ghostty
+
+Ghostty X is a fork of [Ghostty](https://github.com/ghostty-org/ghostty), last merged with upstream at commit [`74241405f`](https://github.com/ghostty-org/ghostty/commit/74241405fe457d6a569a110cffe9d75a1c9a53b7).
+
+- **Credit.** Ghostty is the work of Mitchell Hashimoto and the Ghostty contributors. The terminal emulation, renderer, font handling, shell integration, native tab and split handling, and configuration system in this repository are theirs.
+- **Not official.** This is a personal project. It is not affiliated with, sponsored by or endorsed by the Ghostty project, and "Ghostty" is the name of their project, used here to say what this fork is built on.
+- **Where to report problems.** A problem with anything described above belongs in this repository, not with the Ghostty project. Check whether it also happens in the official Ghostty before reporting it upstream.
+- **The official app.** For Ghostty itself, its downloads and its documentation, go to [ghostty.org](https://ghostty.org).
+- **License.** Ghostty X is distributed under the same [MIT license](LICENSE) as Ghostty, with Ghostty's copyright notice kept in place.
+
+### About the film
+
+The film and every screenshot made from it were recorded from the running app. The Claude Code and Codex sessions in them are staged with sample data, sent through the app's own agent activity hook, and the film says so on screen. Its interface sounds are CC0 recordings, and its narration is a synthetic voice made with ElevenLabs.
 
 ---
+
+## Original Ghostty README
+
+Everything below this line is the README of upstream Ghostty at commit [`74241405f`](https://github.com/ghostty-org/ghostty/blob/74241405fe457d6a569a110cffe9d75a1c9a53b7/README.md), reproduced without changes. Its links, download instructions and roadmap describe Ghostty itself, not this fork.
 
 <!-- LOGO -->
 <h1>
